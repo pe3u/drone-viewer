@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Drone Viewer</title>
+<meta name="description" content="Interactive 3D model of a fixed-wing aerial mapping and survey drone with its internal construction: orbit, guided tour, exploded view and section cuts.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-0: #e9edf2; --bg-1: #f7f9fb; --panel: rgba(255,255,255,.86); --panel-solid: #ffffff;
+  --line: rgba(20,32,52,.12); --line-strong: rgba(20,32,52,.24);
+  --ink: #0f1a2a; --ink-2: #44526a; --ink-3: #7a879b;
+  --accent: #1f5fe0; --accent-ink: #ffffff; --accent-soft: rgba(31,95,224,.12);
+  --hot: #e0362b; --ok: #1f9d55;
+  --shadow: 0 10px 30px rgba(15,26,42,.12), 0 2px 6px rgba(15,26,42,.06);
+  --label-bg: rgba(255,255,255,.92); --label-ink: #0f1a2a; --leader: rgba(15,26,42,.55);
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg-0: #070b12; --bg-1: #121a27; --panel: rgba(16,22,33,.84); --panel-solid: #121a27;
+  --line: rgba(200,215,240,.12); --line-strong: rgba(200,215,240,.24);
+  --ink: #e8eef8; --ink-2: #aab6c9; --ink-3: #75839a;
+  --accent: #4d8dff; --accent-ink: #06101f; --accent-soft: rgba(77,141,255,.16);
+  --hot: #ff5a4e; --ok: #3ccf7e;
+  --shadow: 0 10px 30px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
+  --label-bg: rgba(14,20,31,.9); --label-ink: #e8eef8; --leader: rgba(220,232,255,.55);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-0: #070b12; --bg-1: #121a27; --panel: rgba(16,22,33,.84); --panel-solid: #121a27;
+    --line: rgba(200,215,240,.12); --line-strong: rgba(200,215,240,.24);
+    --ink: #e8eef8; --ink-2: #aab6c9; --ink-3: #75839a;
+    --accent: #4d8dff; --accent-ink: #06101f; --accent-soft: rgba(77,141,255,.16);
+    --hot: #ff5a4e; --ok: #3ccf7e;
+    --shadow: 0 10px 30px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
+    --label-bg: rgba(14,20,31,.9); --label-ink: #e8eef8; --leader: rgba(220,232,255,.55);
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body {
+  font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink);
+  background: radial-gradient(120% 90% at 50% 35%, var(--bg-1) 0%, var(--bg-0) 70%);
+  -webkit-font-smoothing: antialiased; font-size: 14px;
+}
+#stage { position: fixed; inset: 0; }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; outline: none; }
+#overlay { position: fixed; inset: 0; pointer-events: none; }
+#leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.lbl {
+  position: absolute; left: 0; top: 0; padding: 4px 9px; border-radius: 7px; white-space: nowrap;
+  background: var(--label-bg); color: var(--label-ink); font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-weight: 700; font-size: 14.5px; letter-spacing: .02em;
+  box-shadow: 0 2px 10px rgba(0,0,0,.12); border: 1px solid var(--line); transition: opacity .25s;
+  pointer-events: auto; cursor: pointer; will-change: transform; opacity: 0;
+}
+.lbl.sel { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.panel {
+  position: fixed; background: var(--panel); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+}
+header.title { position: fixed; left: calc(20px + env(safe-area-inset-left, 0px)); top: calc(16px + env(safe-area-inset-top, 0px)); pointer-events: none; max-width: calc(100vw - 40px); }
+header.title h1 { margin: 0; font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-size: 34px; line-height: .98; font-weight: 800; letter-spacing: .005em; text-transform: uppercase; text-wrap: balance; }
+header.title p { margin: 8px 0 0; color: var(--ink-2); font-size: 12.5px; max-width: 380px; }
+#tools { right: calc(16px + env(safe-area-inset-right, 0px)); top: calc(16px + env(safe-area-inset-top, 0px)); width: 272px; padding: 12px; max-height: calc(100vh - 170px); overflow: auto; pointer-events: auto; }
+#tools h3, #partsPanel h3 { margin: 4px 2px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--ink-3); font-weight: 700; }
+.row { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.seg { display: flex; background: var(--accent-soft); border-radius: 9px; padding: 3px; gap: 2px; width: 100%; }
+.seg button { flex: 1; }
+button, .btn {
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink); background: transparent; border: 0;
+  padding: 7px 9px; border-radius: 7px; cursor: pointer; transition: background .15s, color .15s;
+}
+button:hover { background: var(--accent-soft); }
+button.on { background: var(--accent); color: var(--accent-ink); }
+button.ghostbtn { border: 1px solid var(--line-strong); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.slider { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; margin-bottom: 10px; }
+.slider label { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.slider output { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 11.5px; color: var(--ink-3); }
+.slider input { grid-column: 1 / -1; }
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; }
+input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 4px; background: var(--line-strong); }
+input[type=range]::-moz-range-track { height: 4px; border-radius: 4px; background: var(--line-strong); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); margin-top: -6px; border: 2px solid var(--panel-solid); box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--panel-solid); }
+.toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 10px; }
+.toggles button { text-align: left; border: 1px solid var(--line); display: flex; align-items: center; gap: 7px; }
+.toggles button::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); flex: none; }
+.toggles button.on::before { background: var(--accent-ink); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+#partsPanel { left: 16px; top: 150px; width: 250px; max-height: calc(100vh - 330px); display: flex; flex-direction: column; padding: 12px 8px 8px 12px; pointer-events: auto; }
+#partsPanel .list { overflow: auto; padding-right: 4px; }
+.grp { margin: 8px 2px 3px; font-size: 11px; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .08em; }
+.part { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 7px; cursor: pointer; font-size: 13px; }
+.part:hover { background: var(--accent-soft); }
+.part.sel { background: var(--accent); color: var(--accent-ink); }
+.part .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; border: 1px solid rgba(0,0,0,.15); }
+.part .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.part .eye { width: 22px; height: 22px; padding: 0; display: grid; place-items: center; opacity: .55; border-radius: 5px; }
+.part .eye:hover { opacity: 1; }
+.part.hidden .nm { opacity: .4; text-decoration: line-through; }
+#info { left: 50%; transform: translateX(-50%); bottom: 112px; width: min(560px, calc(100vw - 32px)); padding: 14px 16px; pointer-events: auto; display: none; }
+#info.show { display: block; }
+#info h2 { margin: 0 0 2px; font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-size: 22px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; }
+#info .meta { font-size: 11.5px; color: var(--ink-3); font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; margin-bottom: 6px; }
+#info p { margin: 0 0 10px; color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+#info .row { margin: 0; }
+#info .x { position: absolute; right: 8px; top: 8px; }
+#tour { left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(760px, calc(100vw - 32px)); padding: 12px 14px; display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; pointer-events: auto; }
+#tour .play { width: 42px; height: 42px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; padding: 0; }
+#tour .cap b { display: block; font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-size: 19px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; margin-bottom: 1px; }
+#tour .cap span { color: var(--ink-2); font-size: 12.5px; line-height: 1.4; display: block; }
+#tour .steps { display: flex; gap: 3px; margin-top: 8px; }
+#tour .steps i { flex: 1; height: 3px; border-radius: 3px; background: var(--line-strong); position: relative; overflow: hidden; cursor: pointer; }
+#tour .steps i b { position: absolute; inset: 0; width: 0; background: var(--accent); }
+#tour .nav { display: flex; gap: 2px; }
+#stats { right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); padding: 8px 10px; font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 11px; color: var(--ink-3); line-height: 1.5; pointer-events: auto; }
+#tip { position: fixed; padding: 4px 8px; border-radius: 6px; background: var(--ink); color: var(--bg-1); font-size: 12px; font-weight: 600; pointer-events: none; opacity: 0; transition: opacity .12s; white-space: nowrap; z-index: 10; }
+#loader { position: fixed; inset: 0; display: grid; place-items: center; z-index: 20; background: inherit; transition: opacity .5s; }
+#loader .bar { width: 220px; height: 4px; border-radius: 4px; background: var(--line-strong); overflow: hidden; margin-top: 12px; }
+#loader .bar b { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+#loader small { color: var(--ink-3); font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; }
+.kbd { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 10.5px; color: var(--ink-3); }
+#mobileToggle { display: none; }
+@media (max-width: 900px) {
+  header.title { max-width: calc(100vw - 170px); left: 14px; top: 14px; }
+  header.title h1 { font-size: 21px; } header.title p { display: none; }
+  #partsPanel { display: none; }
+  #partsPanel.open { display: flex; left: 16px; right: 16px; width: auto; top: 76px; max-height: 46vh; z-index: 5; }
+  #tools { display: none; }
+  #tools.open { display: block; left: 16px; right: 16px; width: auto; top: 76px; max-height: 52vh; z-index: 5; }
+  #mobileToggle { display: flex; position: fixed; right: 16px; top: 16px; gap: 6px; pointer-events: auto; padding: 4px; }
+  #stats { display: none; }
+  #tour { grid-template-columns: auto 1fr; bottom: 12px; }
+  #tour .nav { display: none; }
+  #info { bottom: 120px; }
+  .lbl { font-size: 11px; padding: 3px 7px; }
+}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="stage"></div>
+<div id="overlay"><svg id="leaders"></svg><div id="labels"></div></div>
+
+<header class="title">
+  <h1>Drone Viewer</h1>
+  <p>Fixed-wing LiDAR / photogrammetry UAV. Drag to orbit, scroll to zoom, click any part. The guided tour plays automatically.</p>
+</header>
+
+<div id="mobileToggle" class="panel">
+  <button id="mParts">Parts</button><button id="mTools">View</button>
+</div>
+
+<aside id="partsPanel" class="panel" aria-label="Parts">
+  <h3>Parts <span class="kbd" id="partCount"></span></h3>
+  <div class="list" id="partList"></div>
+</aside>
+
+<aside id="tools" class="panel" aria-label="View controls">
+  <h3>Skin</h3>
+  <div class="seg" id="shellSeg" style="margin-bottom:10px">
+    <button data-v="solid">Solid</button><button data-v="cutaway" class="on">Cutaway</button><button data-v="ghost">X-ray</button><button data-v="hidden">Off</button>
+  </div>
+  <div class="slider"><label for="explode">Exploded view</label><output id="explodeOut">0%</output>
+    <input id="explode" type="range" min="0" max="1" step="0.001" value="0"></div>
+  <hr>
+  <h3>Section cut</h3>
+  <div class="seg" id="secSeg" style="margin-bottom:8px">
+    <button data-v="off" class="on">Off</button><button data-v="z">Side</button><button data-v="x">Station</button><button data-v="y">Plan</button>
+  </div>
+  <div class="slider"><label for="secPos">Plane position</label><output id="secOut">—</output>
+    <input id="secPos" type="range" min="0" max="1" step="0.001" value="0.5"></div>
+  <div class="row"><button class="ghostbtn" id="secFlip">Flip side</button><button class="ghostbtn" id="secSweep">Sweep</button><button class="ghostbtn on" id="secCaps">Caps</button></div>
+  <hr>
+  <h3>Display</h3>
+  <div class="toggles">
+    <button id="tRotate" class="on">Auto-orbit</button>
+    <button id="tLabels" class="on">Labels</button>
+    <button id="tSpin">Motor run</button>
+    <button id="tCtrl">Control check</button>
+    <button id="tPack" class="on" title="Foam cradles, infill and cable ducts">Packing</button>
+    <button id="tWire">Wireframe</button>
+    <button id="tGround" class="on">Ground</button>
+    <button id="tTheme">Dark</button>
+    <button id="tHD">HD detail</button>
+  </div>
+  <h3>Camera</h3>
+  <div class="seg" id="viewSeg">
+    <button data-v="iso">3/4</button><button data-v="side">Side</button><button data-v="top">Top</button><button data-v="front">Front</button><button data-v="under">Below</button>
+  </div>
+</aside>
+
+<section id="info" class="panel" aria-live="polite">
+  <button class="x" id="infoClose" aria-label="Close">✕</button>
+  <h2 id="infoTitle"></h2>
+  <div class="meta" id="infoMeta"></div>
+  <p id="infoDesc"></p>
+  <div class="row"><button class="ghostbtn" id="infoFocus">Focus</button><button class="ghostbtn" id="infoIso">Isolate</button><button class="ghostbtn" id="infoHide">Hide</button></div>
+</section>
+
+<section id="tour" class="panel">
+  <button class="play" id="tourPlay" aria-label="Play or pause the tour">❚❚</button>
+  <div class="cap"><b id="tourTitle">Loading…</b><span id="tourText"></span><div class="steps" id="tourSteps"></div></div>
+  <div class="nav"><button id="tourPrev" aria-label="Previous step">◀</button><button id="tourNext" aria-label="Next step">▶</button></div>
+</section>
+
+<div id="stats" class="panel"></div>
+<div id="tip"></div>
+<div id="loader"><div style="text-align:center"><b>Loading survey drone</b><div class="bar"><b id="loadBar"></b></div><small id="loadTxt">0 KB</small></div></div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
