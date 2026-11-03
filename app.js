@@ -482,7 +482,9 @@ function freeArea() {
   if (areaCache) return areaCache;
   const W = innerWidth, H = innerHeight;
   const r = (sel) => { const el = $(sel); const b = el.getBoundingClientRect(); return b.width && getComputedStyle(el).display !== 'none' ? b : null; };
-  const parts = r('#partsPanel'), tools = r('#tools'), tourB = r('#tour'), head = $('header.title').getBoundingClientRect();
+  const idle = document.body.classList.contains('idle');   // hidden menus free their screen space
+  const parts = idle ? null : r('#partsPanel'), tools = idle ? null : r('#tools');
+  const tourB = r('#tour'), head = $('header.title').getBoundingClientRect();
   areaCache = {
     l: parts && parts.top < H * 0.6 ? parts.right + 8 : 8,
     r: tools ? tools.left - 8 : W - 8,
@@ -492,6 +494,27 @@ function freeArea() {
   return areaCache;
 }
 addEventListener('resize', () => (areaCache = null));
+
+// ------------------------------------------------------------------ auto-hiding menus
+const IDLE_MS = matchMedia('(hover: none)').matches ? 5000 : 3000;
+let idleTimer = 0;
+function setIdle(on) {
+  if (document.body.classList.contains('idle') === on) return;
+  document.body.classList.toggle('idle', on);
+  areaCache = null;
+}
+function goIdle() {
+  // stay visible while the pointer rests on a menu or the keyboard is working inside one
+  if (document.querySelector('.autohide:hover, .autohide :focus-visible')) { idleTimer = setTimeout(goIdle, IDLE_MS); return; }
+  setIdle(true);
+}
+function wake() {
+  setIdle(false);
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(goIdle, IDLE_MS);
+}
+for (const ev of ['pointermove', 'pointerdown', 'wheel', 'keydown', 'touchstart']) addEventListener(ev, wake, { passive: true });
+wake();
 
 function updateLabels() {
   const W = innerWidth, H = innerHeight;
