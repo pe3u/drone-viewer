@@ -1,0 +1,11 @@
+# Blender backups and Python caches
+*.blend1
+__pycache__/
+
+# generated single-file page for the claude.ai Artifact (rebuild with scripts/build_artifact.js)
+artifact/
+
+# file-sync conflict copies
+*(# Name clash*
+*(# Edit conflict*
+archive/
