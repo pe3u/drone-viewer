@@ -2,7 +2,7 @@
 
 Procedural Blender model of a fixed-wing LiDAR / photogrammetry survey drone, including its internal construction, plus a web viewer.
 
-**Live viewer:** https://pe3u.github.io/drone-viewer/ (the `web/` folder, published from the `gh-pages` branch: `git subtree push --prefix web origin gh-pages`).
+**Live viewer:** https://pe3u.github.io/drone-viewer/ (the `web/` folder, deployed by `.github/workflows/pages.yml` on every push to `main` that touches it).
 
 ## Model (Blender 5.2, metres, nose toward -X)
 
@@ -34,4 +34,4 @@ Every part is a closed mesh (so section cuts can be capped) and carries metadata
 
 ## Viewer
 
-three.js 0.170: orbit / auto-orbit, autoplay guided tour (17 steps), staggered exploded view, Solid / Cutaway / X-ray / Off skins, section planes (side, station, plan) with stencil caps and sweep, labels with leader lines, part list with hide / isolate / focus, control-surface check, motor run, Packing toggle (foam / infill / ducts), wireframe, HD / Lite LOD switch, light and dark themes. Keys: Space play/pause, E explode, Esc deselect. `?lod=lite` forces the light model.
+three.js 0.170: orbit / auto-orbit, autoplay guided tour (17 steps), staggered exploded view, Solid / Cutaway / X-ray / Off skins, section planes (side, station, plan) with stencil caps and sweep, labels with leader lines, part list with hide / isolate / focus, control-surface check, motor run, Packing toggle (foam / infill / ducts), wireframe, HD / Lite LOD switch, light and dark themes. Menus fade out after 3 s without input (5 s on touch screens) and return on any pointer, touch or key input. Keys: Space play/pause, E explode, Esc deselect. `?lod=lite` forces the light model.

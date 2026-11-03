@@ -127,6 +127,10 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
 #loader small { color: var(--ink-3); font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; }
 .kbd { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 10.5px; color: var(--ink-3); }
 #mobileToggle { display: none; }
+/* menus fade out while the viewer is idle and come back on any pointer, touch or key input */
+.autohide { transition: opacity .45s ease, visibility 0s linear 0s; }
+body.idle .autohide { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; transition: opacity .6s ease, visibility 0s linear .6s; }
+@media (prefers-reduced-motion: reduce) { .autohide, body.idle .autohide { transition: none; } }
 @media (max-width: 900px) {
   header.title { max-width: calc(100vw - 170px); left: 14px; top: 14px; }
   header.title h1 { font-size: 21px; } header.title p { display: none; }
@@ -158,16 +162,16 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
   <p>Fixed-wing LiDAR / photogrammetry UAV. Drag to orbit, scroll to zoom, click any part. The guided tour plays automatically.</p>
 </header>
 
-<div id="mobileToggle" class="panel">
+<div id="mobileToggle" class="panel autohide">
   <button id="mParts">Parts</button><button id="mTools">View</button>
 </div>
 
-<aside id="partsPanel" class="panel" aria-label="Parts">
+<aside id="partsPanel" class="panel autohide" aria-label="Parts">
   <h3>Parts <span class="kbd" id="partCount"></span></h3>
   <div class="list" id="partList"></div>
 </aside>
 
-<aside id="tools" class="panel" aria-label="View controls">
+<aside id="tools" class="panel autohide" aria-label="View controls">
   <h3>Skin</h3>
   <div class="seg" id="shellSeg" style="margin-bottom:10px">
     <button data-v="solid">Solid</button><button data-v="cutaway" class="on">Cutaway</button><button data-v="ghost">X-ray</button><button data-v="hidden">Off</button>
@@ -215,7 +219,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
   <div class="nav"><button id="tourPrev" aria-label="Previous step">◀</button><button id="tourNext" aria-label="Next step">▶</button></div>
 </section>
 
-<div id="stats" class="panel"></div>
+<div id="stats" class="panel autohide"></div>
 <div id="tip"></div>
 <div id="loader"><div style="text-align:center"><b>Loading survey drone</b><div class="bar"><b id="loadBar"></b></div><small id="loadTxt">0 KB</small></div></div>
 
