@@ -15,8 +15,8 @@ def segs(n, lo=4):
 # flat colour palette (base colour / metallic / roughness only: no textures)
 PALETTE = {
     "white":   ((0.68, 0.70, 0.73, 1), 0.0, 0.42),
-    "blue":    ((0.042, 0.044, 0.048, 1), 0.0, 0.92),    # accent bands: same dark matte as the skin; key kept for the builders
-    "skin":    ((0.042, 0.044, 0.048, 1), 0.0, 0.92),     # exterior: dark matte composite
+    "blue":    ((0.016, 0.017, 0.019, 1), 0.0, 0.92),    # accent bands: same dark matte as the skin; key kept for the builders
+    "skin":    ((0.016, 0.017, 0.019, 1), 0.0, 0.92),     # exterior: dark matte composite
     "grey":    ((0.45, 0.47, 0.50, 1), 0.2, 0.5),
     "alu":     ((0.72, 0.74, 0.77, 1), 0.85, 0.32),
     "dark":    ((0.035, 0.037, 0.04, 1), 0.1, 0.55),
