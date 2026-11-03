@@ -10,7 +10,7 @@ importlib.reload(dl)
 dl.DETAIL = globals().get("DETAIL", 1.0)
 
 MODULES = ["fuselage"]
-for extra in ("wings", "tail", "propulsion", "payload", "interior", "avionics", "wiring", "infill"):
+for extra in ("wings", "tail", "fillets", "propulsion", "payload", "interior", "avionics", "wiring", "infill"):
     try:
         importlib.import_module(extra)
         MODULES.append(extra)

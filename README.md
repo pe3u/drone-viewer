@@ -14,6 +14,7 @@ Built entirely by the Python scripts in `scripts/`. Edit them, not the `.blend`.
 | `fuselage.py` | Shell, removable side panels and top hatch (with fasteners), bulkheads, floor, aft tray, longerons, wing joiner tubes, belly skids |
 | `wings.py` | Wing skins with winglets, flaps, ailerons, ribs, spars, servos, pushrods, nav lights, pitot probe |
 | `tail.py` | Horizontal stabilisers, elevators, vertical fin, rudder, ventral fin |
+| `fillets.py` | Root fairings blending the wing, tailplane, fin and ventral fin into the fuselage (quarter-ellipse plan curves, pressed onto the hull) |
 | `propulsion.py` | Motor mount, outrunner motor, spinner, 2-blade pusher prop |
 | `payload.py` | LiDAR, gimballed mapping camera, GNSS antenna, datalink antenna |
 | `avionics.py` | IMU, flight controller, data processing unit, battery, PDB, ESC, tail servos, radio, GNSS receiver, auxiliary electronics |

@@ -8,7 +8,7 @@ COMPRESS = globals().get("COMPRESS", "meshopt")
 
 SKINS = ("Fuselage_Shell", "Access_Panel_L", "Access_Panel_R", "Top_Hatch", "Wing_L", "Wing_R", "Flap_L", "Flap_R",
          "Aileron_L", "Aileron_R", "H_Stabilizer_L", "H_Stabilizer_R", "Elevator_L", "Elevator_R", "Vertical_Fin",
-         "Rudder", "Ventral_Fin")
+         "Rudder", "Ventral_Fin", "Wing_Fairings", "Tail_Fairings")
 
 
 def annotate(coll):
