@@ -33,14 +33,14 @@ scene.environmentIntensity = 0.6;
 
 // a hidden tab / pane can report a 0 x 0 window: keep the aspect finite or the camera turns NaN
 const viewAspect = () => (innerWidth > 0 && innerHeight > 0 ? innerWidth / innerHeight : 1.6);
-const camera = new THREE.PerspectiveCamera(32, viewAspect(), 0.02, 80);
+const camera = new THREE.PerspectiveCamera(32, viewAspect(), 0.02, 16000);
 camera.position.set(-3.4, 1.9, 3.6);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.minDistance = 0.2;
 controls.maxDistance = 10;
-controls.autoRotateSpeed = 0.5;
+controls.autoRotateSpeed = 0.1;     // one turn in ten minutes
 controls.target.set(0, 0, 0);
 
 scene.add(new THREE.HemisphereLight(0xf2f6ff, 0x3b4656, 0.55));
@@ -57,20 +57,42 @@ const fill = new THREE.DirectionalLight(0xdfe8ff, 0.6);
 fill.position.set(-4, 2, 4);
 scene.add(fill);
 
-const GROUND_Y = -0.62;
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.16 }));
+// ground 100 m below the drone: one wide disc with its grid drawn in the shader, so distant lines melt away
+// instead of shimmering. Its opacity falls off linearly with the viewing angle down to the rim: linear in metres
+// would pile the whole fade into a thin line at the horizon, linear in angle reads as an even fade on screen
+const GROUND_Y = -100, GROUND_R = 6000, GROUND_FADE = 500;
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(GROUND_R * 2, GROUND_R * 2), new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false,
+  uniforms: { uColor: { value: new THREE.Color() }, uLine: { value: new THREE.Color() }, uOpacity: { value: 1 }, uFade: { value: new THREE.Vector2(Math.atan(-GROUND_Y / GROUND_FADE), Math.atan(-GROUND_Y / GROUND_R)) }, uHeight: { value: -GROUND_Y } },
+  vertexShader: `
+    varying vec2 vP;
+    void main() {
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vP = w.xz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+  fragmentShader: `
+    uniform vec3 uColor, uLine;
+    uniform float uOpacity, uHeight;
+    uniform vec2 uFade;
+    varying vec2 vP;
+    float gridLine(float cell) {
+      vec2 q = vP / cell, w = fwidth(q);
+      vec2 g = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-4));
+      return (1.0 - min(min(g.x, g.y), 1.0)) * (1.0 - smoothstep(0.12, 0.45, max(w.x, w.y)));
+    }
+    void main() {
+      float lines = max(gridLine(20.0) * 0.45, gridLine(100.0));
+      float angle = atan(uHeight, length(vP));
+      gl_FragColor = vec4(mix(uColor, uLine, lines), clamp((angle - uFade.y) / (uFade.x - uFade.y), 0.0, 1.0) * uOpacity);
+      #include <colorspace_fragment>
+    }`,
+}));
 ground.rotation.x = -Math.PI / 2;
 ground.position.y = GROUND_Y;
-ground.receiveShadow = true;
+ground.renderOrder = -2;
 scene.add(ground);
-const grid = new THREE.GridHelper(14, 56, 0x8899aa, 0x8899aa);
-grid.material.transparent = true;
-grid.material.opacity = 0.12;
-grid.material.depthWrite = false;
-grid.position.y = GROUND_Y + 0.001;
-scene.add(grid);
 
-// pool of light on the ground: the near-black drone reads as a silhouette against it
 function radialTexture(size, stops) {
   const c = document.createElement('canvas');
   c.width = c.height = size;
@@ -82,18 +104,10 @@ function radialTexture(size, stops) {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
-const pool = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshBasicMaterial({
-  map: radialTexture(512, [[0, 1], [0.3, 0.72], [0.6, 0.2], [1, 0]]), transparent: true, depthWrite: false, toneMapped: false,
-}));
-pool.rotation.x = -Math.PI / 2;
-pool.position.y = GROUND_Y - 0.001;
-pool.renderOrder = -2;
-ground.renderOrder = -1;
-scene.add(pool);
 
-// star field on a far sphere, all the way round: the default view looks down, so a sky only above the
-// horizon would never be seen. Seeded, so the sky is the same on every visit.
-const stars = new THREE.Group();
+// night sky: stars on the upper hemisphere, fading out towards the horizon. Seeded, so it is the same on every visit.
+const SKY_R = 7000;
+const sky = new THREE.Group();
 {
   let seed = 20261104;
   const rnd = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -101,9 +115,9 @@ const stars = new THREE.Group();
   for (const [count, size, tint] of [[3200, 2, 0.8], [1000, 3, 1], [240, 4.6, 1.3]]) {
     const pos = new Float32Array(count * 3), col = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      const z = rnd() * 2 - 1, a = rnd() * Math.PI * 2, r = Math.sqrt(1 - z * z);
-      pos.set([r * Math.cos(a) * 40, z * 40, r * Math.sin(a) * 40], i * 3);
-      const warm = rnd(), b = tint * (0.6 + 0.4 * rnd());      // a few warm stars among the blue-white
+      const y = rnd(), a = rnd() * Math.PI * 2, r = Math.sqrt(1 - y * y);
+      pos.set([r * Math.cos(a) * SKY_R, y * SKY_R, r * Math.sin(a) * SKY_R], i * 3);
+      const warm = rnd(), b = tint * (0.6 + 0.4 * rnd()) * smooth(0, 0.1, y);      // a few warm stars among the blue-white
       col.set(warm < 0.15 ? [b, b * 0.86, b * 0.7] : [b * 0.86, b * 0.92, b], i * 3);
     }
     const geo = new THREE.BufferGeometry();
@@ -113,12 +127,53 @@ const stars = new THREE.Group();
       size: size * Math.min(window.devicePixelRatio, 2), sizeAttenuation: false, map: dot, vertexColors: true,
       transparent: true, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending,
     }));
-    pts.renderOrder = -3;
+    pts.renderOrder = -4;
     pts.frustumCulled = false;
-    stars.add(pts);
+    sky.add(pts);
   }
 }
-scene.add(stars);
+// aurora borealis: curtains around the sky with sharp lower edges and vertical rays that fade upward, green low
+// and violet high. Noise runs on the unit circle of the azimuth, so there is no seam; it drifts very slowly.
+const aurora = new THREE.Mesh(new THREE.SphereGeometry(SKY_R * 1.05, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.ShaderMaterial({
+  side: THREE.BackSide, transparent: true, depthWrite: false, toneMapped: false,
+  blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `
+    varying vec3 vD;
+    void main() { vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform float uTime;
+    varying vec3 vD;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float noise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+    }
+    vec3 curtain(vec2 c, float alt, float s) {
+      float t = uTime;
+      float base = 0.018 + 0.05 * noise(c * 1.4 + s + t * 0.012) + 0.014 * noise(c * 6.0 + s * 3.0 - t * 0.03);
+      float h = alt - base;
+      float reach = 0.16 + 0.3 * noise(c * 2.2 + s + 9.0);
+      float body = smoothstep(-0.008, 0.012, h) * exp(-max(h, 0.0) / reach * 2.4);
+      float rays = 0.4 + 0.9 * pow(noise(c * 42.0 + vec2(s, t * 0.05)), 2.0) + 0.35 * noise(c * 15.0 - vec2(t * 0.03, s));
+      float region = smoothstep(0.3, 0.68, noise(c * 1.2 + s * 1.7 + t * 0.008));
+      vec3 col = mix(vec3(0.10, 1.0, 0.48), vec3(0.08, 0.72, 0.78), smoothstep(0.02, 0.14, h));
+      col = mix(col, vec3(0.58, 0.20, 0.92), smoothstep(0.1, 0.34, h));
+      return col * body * rays * region;
+    }
+    void main() {
+      vec3 d = normalize(vD);
+      vec2 c = d.xz / max(length(d.xz), 1e-4);
+      vec3 col = curtain(c, d.y, 3.1) + 0.8 * curtain(c, d.y, 11.7) + 0.6 * curtain(c, d.y, 23.3);
+      col *= 0.3 * smoothstep(0.0, 0.03, d.y) * (1.0 - smoothstep(0.55, 0.9, d.y));
+      gl_FragColor = vec4(col, max(col.r, max(col.g, col.b)));
+    }`,
+}));
+aurora.renderOrder = -3;
+aurora.frustumCulled = false;
+sky.add(aurora);
+scene.add(sky);
 
 // ------------------------------------------------------------------ state
 const S = {
@@ -217,7 +272,7 @@ function onLoad(gltf) {
       camera.position.set(...s.cam);
     } else {
       S.explode = 1.15;            // parts fly in and assemble on first load
-      camera.position.set(-5.2, 3.2, 5.6);
+      camera.position.set(-5.7, 1.3, 6.1);
       startTour(0);
     }
   } else {
@@ -728,14 +783,14 @@ function updateFlight(dt) {
   if (flight.t >= 1) flight = null;
 }
 const VIEWS = {
-  iso: [[-3.4, 1.9, 3.6], [0, 0, 0]], side: [[0.05, 0.12, 4.4], [0.05, 0.02, 0]], top: [[0.0, 5.2, 0.01], [0.05, 0, 0]],
+  iso: [[-3.8, 0.85, 4.0], [0, 0, 0]], side: [[0.05, 0.12, 4.4], [0.05, 0.02, 0]], top: [[0.0, 5.2, 0.01], [0.05, 0, 0]],
   front: [[-4.6, 0.5, 0.0], [0, 0.05, 0]], under: [[-1.4, -3.4, 1.8], [0, 0, 0]],
 };
 
 // ------------------------------------------------------------------ guided tour
 const TOUR = [
   { t: 'Aerial mapping & survey drone', x: 'Fixed-wing LiDAR and photogrammetry UAV, 3.1 m span, electric pusher. Drag anywhere to take control.',
-    cam: [-3.4, 1.9, 3.6], tgt: [0, 0, 0], shell: 'solid', ex: 0, orbit: 0.8, d: 7 },
+    cam: [-3.8, 0.85, 4.0], tgt: [0, 0, 0], shell: 'solid', ex: 0, orbit: 0.8, d: 7 },
   { t: 'Cutaway', x: 'The side access panels come off to expose the avionics bay running from the nose to the wing.',
     cam: [-0.9, 0.55, 2.3], tgt: [-0.2, -0.04, 0], shell: 'cutaway', ex: 0, orbit: 0.3, d: 6 },
   { t: 'LiDAR sensor', x: 'Chin-mounted 360° multi-beam laser scanner. Its cooling rings sit inside the nose bay.',
@@ -832,7 +887,7 @@ function updateTour(dt) {
   tour.t += dt;
   if (!flight && s.orbit) {
     const off = camera.position.clone().sub(controls.target);
-    off.applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(s.orbit * 4) * dt);
+    off.applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(s.orbit) * dt);
     camera.position.copy(controls.target).add(off);
   }
   if (s.sec) {
@@ -919,7 +974,7 @@ $('#tLabels').classList.toggle('on', S.labels);
 toggle('#tSpin', 'spin');
 $('#tCtrl').addEventListener('click', () => { S.ctrlT = S.ctrlT ? 0 : 1; $('#tCtrl').classList.toggle('on', !!S.ctrlT); });
 toggle('#tWire', 'wire');
-toggle('#tGround', 'ground', () => { ground.visible = grid.visible = pool.visible = S.ground; });
+toggle('#tGround', 'ground', () => { ground.visible = S.ground; });
 $('#tTheme').addEventListener('click', () => {
   const dark = !isDark();
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
@@ -932,12 +987,11 @@ function isDark() {
 function applyTheme() {
   const dark = isDark();
   $('#tTheme').classList.toggle('on', dark);
-  ground.material.opacity = dark ? 0.6 : 0.2;
-  grid.material.color.set(dark ? 0x5d7aa8 : 0x8899aa);
-  grid.material.opacity = dark ? 0.22 : 0.08;
-  pool.material.color.set(dark ? 0xa6bbdc : 0xffffff);
-  pool.material.opacity = dark ? 0.62 : 0.85;
-  stars.visible = dark;       // no stars in a daylight sky
+  const gu = ground.material.uniforms;
+  gu.uColor.value.set(dark ? 0xa6bbdc : 0xffffff);
+  gu.uLine.value.set(dark ? 0x6f8ab4 : 0xa9b6c6);
+  gu.uOpacity.value = dark ? 0.62 : 0.9;
+  sky.visible = dark;         // no stars or aurora in a daylight sky
   secFrame.material.color.set(dark ? 0xff5a4e : 0xe0362b);
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
@@ -984,6 +1038,7 @@ window.__drone = {
 function tick(dt) {
   simTime += dt;
   const time = simTime;
+  aurora.material.uniforms.uTime.value = time;
   updateTour(dt);
   updateFlight(dt);
   if (manualSweep) {
