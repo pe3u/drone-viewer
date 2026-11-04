@@ -145,7 +145,7 @@ function onLoad(gltf) {
   buildCaps();
   buildPartList();
   buildLabels();
-  buildSilhouette();
+  layoutRing();
   for (const n of S.hidden) byName[n] && byName[n].row.classList.add('hidden');
   S.selected = byName[keep.sel] || null;
   S.isolate = byName[keep.iso] || null;
@@ -448,8 +448,8 @@ function updateParts(dt, time) {
 
 // ------------------------------------------------------------------ labels
 const LABELS = [
-  ['LiDAR_Sensor'], ['Mapping_Camera'], ['Flight_Controller'], ['Data_Processing_Unit'], ['Battery_Pack'],
-  ['IMU', 'Avionics Bay'], ['GNSS_Antenna'], ['Comm_Antenna', 'Communication Antenna'], ['Electric_Motor'],
+  ['LiDAR_Sensor'], ['Mapping_Camera'], ['Flight_Controller'], ['Data_Processing_Unit', 'Data Processor'], ['Battery_Pack'],
+  ['IMU', 'Avionics Bay'], ['GNSS_Antenna'], ['Comm_Antenna', 'Comms Antenna'], ['Electric_Motor'],
   ['Wing_L', 'Left Wing'], ['Wing_R', 'Right Wing'], ['Vertical_Fin', 'Tail Assembly'], ['Propeller'],
   ['Payload_Computer'], ['Satcom_Modem', 'Satcom / LTE'], ['Parachute_System', 'Parachute'],
   ['Belly_Battery', 'Belly Batteries'],
@@ -488,7 +488,7 @@ function freeArea() {
 addEventListener('resize', () => (areaCache = null));
 
 // ------------------------------------------------------------------ auto-hiding menus
-// Each menu stays hidden and opens while the pointer is over the place it lives. Touch screens have no
+// Each menu rests at 1 % opacity and opens while the pointer is over the place it lives. Touch screens have no
 // hover: a tap shows them all and they fade again after a few seconds without input.
 const MENUS = [...document.querySelectorAll('.autohide')];
 const HOVER = matchMedia('(hover: hover) and (pointer: fine)').matches;
@@ -527,115 +527,64 @@ addEventListener('pointerdown', (e) => {
 }, { passive: true });
 addEventListener('pointerup', () => { dragMenu = null; trackPointer(lastX, lastY); }, { passive: true });
 document.documentElement.addEventListener('pointerleave', () => { lastX = lastY = -1e4; MENUS.forEach((el) => hideSoon(el)); });
-addEventListener('keydown', (e) => { if (e.key === 'Tab') wakeAll(); });
 document.addEventListener('focusin', (e) => { const el = MENUS.find((m) => m.contains(e.target)); if (el) showMenu(el, true); });
 document.addEventListener('focusout', (e) => { const el = MENUS.find((m) => m.contains(e.target)); if (el) hideSoon(el); });
 wakeAll();   // show the menus for a moment on load so it is clear where they live
 
 // ------------------------------------------------------------------ label placement
-// Labels sit beside the drone, never on it: a sample of every visible part's vertices is projected each
-// frame into screen rows (leftmost / rightmost drone pixel per 4 px row). A label goes just past the
-// drone's extent across its own height, on the side of its anchor.
-const SIL_MAX = 4000, SIL_ROW = 4, SIL_GAP = 12;
-let silSamples = [], rowMin = new Float32Array(0), rowMax = new Float32Array(0);
-function buildSilhouette() {
-  const meshes = [];
-  let total = 0;
-  for (const p of parts) for (const m of p.meshes) { meshes.push([p, m]); total += m.geometry.attributes.position.count; }
-  const stride = Math.max(1, Math.ceil(total / SIL_MAX));
-  silSamples = meshes.map(([p, m]) => {
-    const pos = m.geometry.attributes.position, idx = [];
-    const st = Math.max(1, Math.min(stride, Math.floor(pos.count / 8)));
-    for (let i = 0; i < pos.count; i += st) idx.push(i);
-    return { p, m, pos, idx };
-  });
+// Labels sit on one rigid ring around the drone. Every label owns a fixed slot, in the order its part lies
+// around the airframe seen from above, and the ring turns with the camera's azimuth: spacing and order never
+// change, so orbiting moves the text as a single smooth rotation. The ring is centred on the orbit point and
+// sized from the drone's span, so it stays put too.
+const RING_GAP = 14, RING_STAGGER = 26;   // alternate slots step out near the top and bottom, where text runs along the circle
+const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+let ringTurn = null;
+
+function layoutRing() {
+  const c = bounds.getCenter(new THREE.Vector3());
+  const list = labelEls.map((L) => { const q = partCenter(L.p); return { L, az: Math.atan2(q.z - c.z, q.x - c.x) }; }).sort((a, b) => a.az - b.az);
+  const step = 2 * Math.PI / (list.length + list.length % 2);   // even slot count, so the stagger alternates all the way round
+  let sx = 0, sy = 0;
+  list.forEach(({ az }, k) => { sx += Math.cos(az - k * step); sy += Math.sin(az - k * step); });
+  const a0 = Math.atan2(sy, sx);    // best fit of the even slots onto the parts' real directions
+  list.forEach(({ L }, k) => { L.slot = a0 + k * step; L.level = k % 2; });
 }
-const _sv = new THREE.Vector3();
-function silhouette(W, H) {
-  const rows = Math.ceil(H / SIL_ROW) + 1;
-  if (rowMin.length !== rows) { rowMin = new Float32Array(rows); rowMax = new Float32Array(rows); }
-  rowMin.fill(Infinity); rowMax.fill(-Infinity);
-  let x0 = Infinity, x1 = -Infinity, n = 0;
-  for (const { p, m, pos, idx } of silSamples) {
-    if (!m.visible || p.opacity < 0.08) continue;
-    for (const i of idx) {
-      _sv.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
-      if (S.section !== 'off' && clipPlane.distanceToPoint(_sv) < 0) continue;
-      _sv.project(camera);
-      if (_sv.z > 1) continue;
-      const x = (_sv.x * 0.5 + 0.5) * W, y = (-_sv.y * 0.5 + 0.5) * H;
-      const r = Math.floor(y / SIL_ROW);
-      if (r < 0 || r >= rows) continue;
-      if (x < rowMin[r]) rowMin[r] = x;
-      if (x > rowMax[r]) rowMax[r] = x;
-      if (x < x0) x0 = x;
-      if (x > x1) x1 = x;
-      n++;
-    }
-  }
-  return n ? { cx: (x0 + x1) / 2 } : null;
-}
-function droneSpan(y0, y1) {
-  // drone's horizontal extent over a band of rows (padded so sparse samples on thin spans still count)
-  let mn = Infinity, mx = -Infinity;
-  const a = Math.max(0, Math.floor((y0 - SIL_GAP) / SIL_ROW)), b = Math.min(rowMin.length - 1, Math.floor((y1 + SIL_GAP) / SIL_ROW));
-  for (let r = a; r <= b; r++) { if (rowMin[r] < mn) mn = rowMin[r]; if (rowMax[r] > mx) mx = rowMax[r]; }
-  return [mn, mx];
-}
-function placeBeside(it, box) {
-  const w = it.L.w, [mn, mx] = droneSpan(it.ly, it.ly + it.L.h);
-  if (mn === Infinity) { it.lx = it.side > 0 ? it.ax + SIL_GAP : it.ax - SIL_GAP - w; return; }
-  const right = mx + SIL_GAP, left = mn - SIL_GAP - w;
-  const fitsR = right + w <= box.r, fitsL = left >= box.l;
-  it.lx = it.side > 0 ? (fitsR || !fitsL ? right : left) : (fitsL || !fitsR ? left : right);
+function labelRing(W, H, box, dt) {
+  const size = bounds.getSize(_v);
+  const half = Math.max(size.x, size.y, size.z) / 2 * (1 + 0.4 * S.explode);
+  const off = _v.copy(camera.position).sub(controls.target), dist = off.length();
+  const want = Math.atan2(off.x, off.z);
+  // eased, so passing over the pole (where the azimuth spins) turns the ring instead of snapping it
+  ringTurn = ringTurn === null ? want : ringTurn + clamp(angDiff(want, ringTurn) * (1 - Math.exp(-8 * dt)), -3 * dt, 3 * dt);
+  const cx = W / 2, cy = H / 2;
+  const fit = dist > half * 1.02 ? (H / 2) * half / (Math.sqrt(dist * dist - half * half) * Math.tan(camera.fov * Math.PI / 360)) : Infinity;
+  // zoomed in, the drone outgrows the window: the ring stops at the largest one the window holds
+  const rMax = Math.max(60, Math.min(Math.min(cy - box.t, box.b - cy) - 30 - RING_STAGGER, W / 2 - 90));
+  return { cx, cy, R: Math.min(fit + RING_GAP, rMax) };
 }
 
-function updateLabels() {
+function updateLabels(dt) {
   const W = innerWidth, H = innerHeight;
   const cs = getComputedStyle(document.documentElement);
   const lead = cs.getPropertyValue('--leader');
-  const items = [];
   const box = freeArea();
   const fc = S.focus ? partCenter(S.focus) : null;
-  const c = silhouette(W, H);
+  const ring = labelRing(W, H, box, dt);
   for (const L of labelEls) {
     const p = L.p;
     partCenter(p, _v);
-    let show = !!c && (S.labels || p === S.focus || p === S.selected) && partVisible(p) && (p.opacity > 0.08 || (p.skin && S.shell !== 'hidden'));
+    let show = (S.labels || p === S.focus || p === S.selected) && partVisible(p) && (p.opacity > 0.08 || (p.skin && S.shell !== 'hidden'));
     if (fc && _v.distanceTo(fc) > 0.42 && p !== S.focus) show = false;
     if (S.section !== 'off' && clipPlane.distanceToPoint(_v) < -0.02) show = false;
     _v.project(camera);
     if (!show || _v.z > 1) { L.el.style.opacity = 0; L.el.style.pointerEvents = 'none'; L.line.style.opacity = 0; L.dot.style.opacity = 0; continue; }
     const ax = (_v.x * 0.5 + 0.5) * W, ay = (-_v.y * 0.5 + 0.5) * H;
     if (!L.w) { L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; }
-    items.push({ L, ax, ay, side: ax >= c.cx ? 1 : -1, lx: 0, ly: clamp(ay - L.h / 2, box.t, box.b - L.h) });
-  }
-  // stack each side's labels without overlaps, keeping their anchor order: overlapping neighbours merge
-  // into a block centred on its labels' wanted heights, then the labels are set beside the drone
-  for (const side of [-1, 1]) {
-    const blocks = [];
-    for (const it of items.filter((q) => q.side === side).sort((a, b) => a.ly - b.ly)) {
-      let blk = { items: [it], want: it.ly, h: it.L.h + 2, top: it.ly };
-      for (;;) {
-        blk.top = clamp(blk.want / blk.items.length, box.t, Math.max(box.t, box.b - blk.h));
-        const prev = blocks[blocks.length - 1];
-        if (!prev || prev.top + prev.h <= blk.top) break;
-        blocks.pop();
-        // wanted top of the merged block: mean of each label's wanted top minus its offset inside the block
-        let off = prev.h, want = prev.want;
-        for (const q of blk.items) { want += q.ly - off; off += q.L.h + 2; }
-        blk = { items: prev.items.concat(blk.items), want, h: prev.h + blk.h, top: 0 };
-      }
-      blocks.push(blk);
-    }
-    for (const blk of blocks) {
-      let y = blk.top;
-      for (const it of blk.items) { it.ly = y; y += it.L.h + 2; }
-    }
-  }
-  for (const it of items) placeBeside(it, box);
-  for (const { L, ax, ay, lx, ly } of items) {
-    const x = clamp(lx, box.l, box.r - L.w), y = ly;
+    // the circle touches the text's inner edge: text grows outward at every angle, with no left / right switch
+    const c = Math.cos(L.slot + ringTurn), s = Math.sin(L.slot + ringTurn);
+    const r = ring.R + L.level * RING_STAGGER * Math.abs(s);
+    const x = clamp(ring.cx + c * r + (c - 1) * L.w / 2, box.l, box.r - L.w);
+    const y = clamp(ring.cy + s * r + (s - 1) * L.h / 2, box.t, box.b - L.h);
     L.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
     L.el.style.opacity = 1;
     L.el.style.pointerEvents = 'auto';
@@ -999,7 +948,7 @@ function tick(dt) {
   controls.update();
   updateHover();
   renderer.render(scene, camera);
-  if (parts.length) updateLabels();
+  if (parts.length) updateLabels(dt);
   fpsAcc += dt; fpsN++;
   statT += dt;
   if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
