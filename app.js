@@ -70,6 +70,56 @@ grid.material.depthWrite = false;
 grid.position.y = GROUND_Y + 0.001;
 scene.add(grid);
 
+// pool of light on the ground: the near-black drone reads as a silhouette against it
+function radialTexture(size, stops) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d'), r = size / 2, grad = g.createRadialGradient(r, r, 0, r, r, r);
+  for (const [at, alpha] of stops) grad.addColorStop(at, `rgba(255,255,255,${alpha})`);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const pool = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshBasicMaterial({
+  map: radialTexture(512, [[0, 1], [0.3, 0.72], [0.6, 0.2], [1, 0]]), transparent: true, depthWrite: false, toneMapped: false,
+}));
+pool.rotation.x = -Math.PI / 2;
+pool.position.y = GROUND_Y - 0.001;
+pool.renderOrder = -2;
+ground.renderOrder = -1;
+scene.add(pool);
+
+// star field on a far sphere, all the way round: the default view looks down, so a sky only above the
+// horizon would never be seen. Seeded, so the sky is the same on every visit.
+const stars = new THREE.Group();
+{
+  let seed = 20261104;
+  const rnd = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const dot = radialTexture(32, [[0, 1], [0.4, 0.8], [1, 0]]);
+  for (const [count, size, tint] of [[3200, 2, 0.8], [1000, 3, 1], [240, 4.6, 1.3]]) {
+    const pos = new Float32Array(count * 3), col = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const z = rnd() * 2 - 1, a = rnd() * Math.PI * 2, r = Math.sqrt(1 - z * z);
+      pos.set([r * Math.cos(a) * 40, z * 40, r * Math.sin(a) * 40], i * 3);
+      const warm = rnd(), b = tint * (0.6 + 0.4 * rnd());      // a few warm stars among the blue-white
+      col.set(warm < 0.15 ? [b, b * 0.86, b * 0.7] : [b * 0.86, b * 0.92, b], i * 3);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: size * Math.min(window.devicePixelRatio, 2), sizeAttenuation: false, map: dot, vertexColors: true,
+      transparent: true, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending,
+    }));
+    pts.renderOrder = -3;
+    pts.frustumCulled = false;
+    stars.add(pts);
+  }
+}
+scene.add(stars);
+
 // ------------------------------------------------------------------ state
 const S = {
   explode: 0, explodeT: 0, ctrl: 0, ctrlT: 0,
@@ -513,9 +563,11 @@ function hideSoon(el) {
 }
 function trackPointer(x, y) {
   lastX = x; lastY = y;
+  const hit = MENUS.find((el) => within(tabOf(el), x, y, TAB_PAD));
   for (const el of MENUS) {
     const open = el.classList.contains('shown');
-    if (within(tabOf(el), x, y, TAB_PAD) || (open && within(el, x, y, REVEAL_PAD))) showMenu(el, true);
+    if (hit) showMenu(el, el === hit);      // moving between the side-by-side buttons swaps menus at once
+    else if (open && within(el, x, y, REVEAL_PAD)) showMenu(el, true);
     else if (open && el !== dragMenu) hideSoon(el);
   }
 }
@@ -867,7 +919,7 @@ $('#tLabels').classList.toggle('on', S.labels);
 toggle('#tSpin', 'spin');
 $('#tCtrl').addEventListener('click', () => { S.ctrlT = S.ctrlT ? 0 : 1; $('#tCtrl').classList.toggle('on', !!S.ctrlT); });
 toggle('#tWire', 'wire');
-toggle('#tGround', 'ground', () => { ground.visible = grid.visible = S.ground; });
+toggle('#tGround', 'ground', () => { ground.visible = grid.visible = pool.visible = S.ground; });
 $('#tTheme').addEventListener('click', () => {
   const dark = !isDark();
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
@@ -880,9 +932,12 @@ function isDark() {
 function applyTheme() {
   const dark = isDark();
   $('#tTheme').classList.toggle('on', dark);
-  ground.material.opacity = dark ? 0.35 : 0.12;
+  ground.material.opacity = dark ? 0.6 : 0.2;
   grid.material.color.set(dark ? 0x5d7aa8 : 0x8899aa);
-  grid.material.opacity = dark ? 0.16 : 0.06;
+  grid.material.opacity = dark ? 0.22 : 0.08;
+  pool.material.color.set(dark ? 0xa6bbdc : 0xffffff);
+  pool.material.opacity = dark ? 0.62 : 0.85;
+  stars.visible = dark;       // no stars in a daylight sky
   secFrame.material.color.set(dark ? 0xff5a4e : 0xe0362b);
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);

@@ -66,7 +66,7 @@ body {
 header.title { position: fixed; left: calc(20px + env(safe-area-inset-left, 0px)); top: calc(16px + env(safe-area-inset-top, 0px)); pointer-events: none; max-width: calc(100vw - 40px); }
 header.title h1 { margin: 0; font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-size: 34px; line-height: .98; font-weight: 800; letter-spacing: .005em; text-transform: uppercase; text-wrap: balance; }
 header.title p { margin: 8px 0 0; color: var(--ink-2); font-size: 12.5px; max-width: 380px; }
-#tools { right: calc(16px + env(safe-area-inset-right, 0px)); top: calc(16px + env(safe-area-inset-top, 0px)); width: 272px; padding: 12px; max-height: calc(100vh - 170px); overflow: auto; pointer-events: auto; }
+#tools { left: 16px; top: 150px; width: 272px; padding: 12px; max-height: calc(100vh - 170px); overflow: auto; pointer-events: auto; }
 #tools h3, #partsPanel h3 { margin: 4px 2px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--ink-3); font-weight: 700; }
 .row { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
 .seg { display: flex; background: var(--accent-soft); border-radius: 9px; padding: 3px; gap: 2px; width: 100%; }
@@ -127,7 +127,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
 #loader small { color: var(--ink-3); font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; }
 .kbd { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 10.5px; color: var(--ink-3); }
 #mobileToggle { display: none; }
-/* menus rest as small buttons and roll out of them on hover (touch: tap); clip-path is the roll, from the button's corner */
+/* menus rest as buttons and roll out on hover (touch: tap); clip-path is the roll, down from under Parts / View, up into Stats */
 .menuTab {
   position: fixed; height: 34px; min-width: 68px; padding: 0 14px; background: var(--panel); color: var(--ink-2);
   backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
@@ -135,14 +135,15 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
   font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-weight: 700; font-size: 14px; letter-spacing: .05em; text-transform: uppercase;
 }
 .menuTab:hover, .menuTab:focus-visible { color: var(--ink); }
-.menuTab.open { opacity: 0; pointer-events: none; }
-#tabParts { left: 16px; top: 150px; }
-#tabTools { right: calc(16px + env(safe-area-inset-right, 0px)); top: calc(16px + env(safe-area-inset-top, 0px)); }
+.menuTab.open { color: var(--accent); border-color: var(--accent); }
+#tabStats.open { opacity: 0; pointer-events: none; }
+#tabParts, #tabTools { top: 98px; width: 104px; height: 44px; font-size: 18px; border-radius: 12px; }
+#tabParts { left: 16px; }
+#tabTools { left: 128px; }
 #tabStats { right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
 .autohide { clip-path: inset(0 round 14px); transition: clip-path .32s ease, opacity .2s ease, visibility 0s linear 0s; }
 .autohide:not(.shown):not(.open) { opacity: 0; visibility: hidden; pointer-events: none !important; transition: clip-path .28s ease, opacity .2s ease .08s, visibility 0s linear .28s; }
-#tools:not(.shown):not(.open) { clip-path: inset(0 0 calc(100% - 34px) calc(100% - 68px) round 10px); }
-#partsPanel:not(.shown):not(.open) { clip-path: inset(0 calc(100% - 68px) calc(100% - 34px) 0 round 10px); }
+#tools:not(.shown):not(.open), #partsPanel:not(.shown):not(.open) { clip-path: inset(0 0 100% 0 round 14px); }
 #stats:not(.shown):not(.open) { clip-path: inset(calc(100% - 34px) 0 0 calc(100% - 68px) round 10px); }
 @media (prefers-reduced-motion: reduce) { .autohide, .autohide:not(.shown):not(.open), .menuTab { transition: none; } }
 @media (max-width: 900px) {
