@@ -487,49 +487,53 @@ function freeArea() {
 }
 addEventListener('resize', () => (areaCache = null));
 
-// ------------------------------------------------------------------ auto-hiding menus
-// Each menu rests as an outline, its contents at 1 % opacity, and opens while the pointer is over the place it lives. Touch screens have no
-// hover: a tap shows them all and they fade again after a few seconds without input.
+// ------------------------------------------------------------------ roll-out menus
+// Each menu rests as a small button and rolls out of it on hover, staying open while the pointer is on it.
+// Touch has no hover: a tap on the button opens the menu, a tap outside closes it. Phones use #mobileToggle.
 const MENUS = [...document.querySelectorAll('.autohide')];
-const HOVER = matchMedia('(hover: hover) and (pointer: fine)').matches;
-const REVEAL_PAD = 24, HIDE_MS = 600, IDLE_MS = 5000;
+const tabOf = (el) => document.querySelector(`.menuTab[data-menu="${el.id}"]`);
+const REVEAL_PAD = 24, TAB_PAD = 4, HIDE_MS = 600;
 const hideTimers = new Map();
-let dragMenu = null, lastX = -1e4, lastY = -1e4;
+let dragMenu = null, pinned = null, lastX = -1e4, lastY = -1e4;
 function showMenu(el, on) {
   clearTimeout(hideTimers.get(el)); hideTimers.delete(el);
   el.classList.toggle('shown', on);
+  tabOf(el).classList.toggle('open', on);
 }
-function nearMenu(el, x, y) {
-  const b = el.getBoundingClientRect();
-  return b.width > 0 && x > b.left - REVEAL_PAD && x < b.right + REVEAL_PAD && y > b.top - REVEAL_PAD && y < b.bottom + REVEAL_PAD;
+function within(node, x, y, pad) {
+  const b = node.getBoundingClientRect();
+  return b.width > 0 && x > b.left - pad && x < b.right + pad && y > b.top - pad && y < b.bottom + pad;
 }
 function keepMenu(el) {
-  return el === dragMenu || nearMenu(el, lastX, lastY) || !!el.querySelector(':focus-visible');
+  return el === dragMenu || el === pinned || within(el, lastX, lastY, REVEAL_PAD) || !!el.querySelector(':focus-visible') || tabOf(el).matches(':focus-visible');
 }
-function hideSoon(el, ms = HIDE_MS) {
+function hideSoon(el) {
   if (!el.classList.contains('shown') || hideTimers.has(el)) return;
-  hideTimers.set(el, setTimeout(() => { hideTimers.delete(el); if (keepMenu(el)) hideSoon(el); else showMenu(el, false); }, ms));
+  hideTimers.set(el, setTimeout(() => { hideTimers.delete(el); if (keepMenu(el)) hideSoon(el); else showMenu(el, false); }, HIDE_MS));
 }
 function trackPointer(x, y) {
   lastX = x; lastY = y;
   for (const el of MENUS) {
-    if (nearMenu(el, x, y)) showMenu(el, true);
-    else if (el !== dragMenu) hideSoon(el);
+    const open = el.classList.contains('shown');
+    if (within(tabOf(el), x, y, TAB_PAD) || (open && within(el, x, y, REVEAL_PAD))) showMenu(el, true);
+    else if (open && el !== dragMenu) hideSoon(el);
   }
 }
-function wakeAll() {
-  for (const el of MENUS) { showMenu(el, true); hideSoon(el, IDLE_MS); }
-}
+const menuOf = (node) => MENUS.find((el) => el.contains(node) || tabOf(el).contains(node));
 addEventListener('pointermove', (e) => { if (e.pointerType !== 'touch') trackPointer(e.clientX, e.clientY); }, { passive: true });
 addEventListener('pointerdown', (e) => {
-  if (e.pointerType === 'touch' || !HOVER) { wakeAll(); return; }
   dragMenu = MENUS.find((el) => el.contains(e.target)) || null;   // keep a menu open while dragging its slider out of it
+  if (e.pointerType === 'touch' && !menuOf(e.target)) { pinned = null; MENUS.forEach((el) => showMenu(el, false)); }
 }, { passive: true });
 addEventListener('pointerup', () => { dragMenu = null; trackPointer(lastX, lastY); }, { passive: true });
-document.documentElement.addEventListener('pointerleave', () => { lastX = lastY = -1e4; MENUS.forEach((el) => hideSoon(el)); });
-document.addEventListener('focusin', (e) => { const el = MENUS.find((m) => m.contains(e.target)); if (el) showMenu(el, true); });
-document.addEventListener('focusout', (e) => { const el = MENUS.find((m) => m.contains(e.target)); if (el) hideSoon(el); });
-wakeAll();   // show the menus for a moment on load so it is clear where they live
+document.documentElement.addEventListener('pointerleave', () => { lastX = lastY = -1e4; MENUS.forEach(hideSoon); });
+for (const el of MENUS) tabOf(el).addEventListener('click', (e) => {
+  if (e.pointerType !== 'touch') { showMenu(el, true); return; }
+  pinned = el;
+  MENUS.forEach((m) => showMenu(m, m === el));
+});
+document.addEventListener('focusin', (e) => { const el = menuOf(e.target); if (el) showMenu(el, true); });
+document.addEventListener('focusout', (e) => { const el = menuOf(e.target); if (el) hideSoon(el); });
 
 // ------------------------------------------------------------------ label placement
 // Labels sit on a fixed ring around the drone. Every label owns a slot, in the order its part lies around the

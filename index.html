@@ -16,7 +16,7 @@
   --accent: #1f5fe0; --accent-ink: #ffffff; --accent-soft: rgba(31,95,224,.12);
   --hot: #e0362b; --ok: #1f9d55;
   --shadow: 0 10px 30px rgba(15,26,42,.12), 0 2px 6px rgba(15,26,42,.06);
-  --label-ink: #0f1a2a; --label-halo: rgba(238,242,248,.85); --leader: rgba(15,26,42,.22);
+  --label-ink: #0f1a2a; --label-halo: rgba(238,242,248,.85); --leader: rgba(15,26,42,.11);
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -26,7 +26,7 @@
   --accent: #4d8dff; --accent-ink: #06101f; --accent-soft: rgba(77,141,255,.16);
   --hot: #ff5a4e; --ok: #3ccf7e;
   --shadow: 0 10px 30px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
-  --label-ink: #e8eef8; --label-halo: rgba(7,11,18,.85); --leader: rgba(220,232,255,.22);
+  --label-ink: #e8eef8; --label-halo: rgba(7,11,18,.85); --leader: rgba(220,232,255,.11);
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -37,7 +37,7 @@
     --accent: #4d8dff; --accent-ink: #06101f; --accent-soft: rgba(77,141,255,.16);
     --hot: #ff5a4e; --ok: #3ccf7e;
     --shadow: 0 10px 30px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
-    --label-ink: #e8eef8; --label-halo: rgba(7,11,18,.85); --leader: rgba(220,232,255,.22);
+    --label-ink: #e8eef8; --label-halo: rgba(7,11,18,.85); --leader: rgba(220,232,255,.11);
     color-scheme: dark;
   }
 }
@@ -127,12 +127,24 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
 #loader small { color: var(--ink-3); font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; }
 .kbd { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 10.5px; color: var(--ink-3); }
 #mobileToggle { display: none; }
-/* resting menus are an empty outline, their contents at 1 % opacity; they open when the pointer comes over the place they live (touch: any tap) */
-.autohide, .autohide > * { transition: opacity .3s ease, color .3s ease, background-color .3s ease, border-color .3s ease, box-shadow .3s ease; }
-.autohide:not(.shown) { background: transparent; border-color: var(--ink-3); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; overflow: hidden; pointer-events: none !important; }
-.autohide:not(.shown) > * { opacity: .01; }
-#stats.autohide:not(.shown) { color: color-mix(in srgb, var(--ink-3) 1%, transparent); }   /* bare text, no child to fade */
-@media (prefers-reduced-motion: reduce) { .autohide, .autohide > * { transition: none; } }
+/* menus rest as small buttons and roll out of them on hover (touch: tap); clip-path is the roll, from the button's corner */
+.menuTab {
+  position: fixed; height: 34px; min-width: 68px; padding: 0 14px; background: var(--panel); color: var(--ink-2);
+  backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid var(--line-strong); border-radius: 10px; cursor: pointer; transition: opacity .2s ease, color .2s ease;
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-weight: 700; font-size: 14px; letter-spacing: .05em; text-transform: uppercase;
+}
+.menuTab:hover, .menuTab:focus-visible { color: var(--ink); }
+.menuTab.open { opacity: 0; pointer-events: none; }
+#tabParts { left: 16px; top: 150px; }
+#tabTools { right: calc(16px + env(safe-area-inset-right, 0px)); top: calc(16px + env(safe-area-inset-top, 0px)); }
+#tabStats { right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+.autohide { clip-path: inset(0 round 14px); transition: clip-path .32s ease, opacity .2s ease, visibility 0s linear 0s; }
+.autohide:not(.shown):not(.open) { opacity: 0; visibility: hidden; pointer-events: none !important; transition: clip-path .28s ease, opacity .2s ease .08s, visibility 0s linear .28s; }
+#tools:not(.shown):not(.open) { clip-path: inset(0 0 calc(100% - 34px) calc(100% - 68px) round 10px); }
+#partsPanel:not(.shown):not(.open) { clip-path: inset(0 calc(100% - 68px) calc(100% - 34px) 0 round 10px); }
+#stats:not(.shown):not(.open) { clip-path: inset(calc(100% - 34px) 0 0 calc(100% - 68px) round 10px); }
+@media (prefers-reduced-motion: reduce) { .autohide, .autohide:not(.shown):not(.open), .menuTab { transition: none; } }
 @media (max-width: 900px) {
   header.title { max-width: calc(100vw - 170px); left: 14px; top: 14px; }
   header.title h1 { font-size: 21px; } header.title p { display: none; }
@@ -140,6 +152,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
   #partsPanel.open { display: flex; left: 16px; right: 16px; width: auto; top: 76px; max-height: 46vh; z-index: 5; }
   #tools { display: none; }
   #tools.open { display: block; left: 16px; right: 16px; width: auto; top: 76px; max-height: 52vh; z-index: 5; }
+  .menuTab { display: none; }
   #mobileToggle { display: flex; position: fixed; right: 16px; top: 16px; gap: 6px; pointer-events: auto; padding: 4px; }
   #stats { display: none; }
   #tour { grid-template-columns: auto 1fr; bottom: 12px; }
@@ -164,15 +177,17 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
   <p>Fixed-wing LiDAR / photogrammetry UAV. Drag to orbit, scroll to zoom, click any part. The guided tour plays automatically.</p>
 </header>
 
-<div id="mobileToggle" class="panel autohide">
+<div id="mobileToggle" class="panel">
   <button id="mParts">Parts</button><button id="mTools">View</button>
 </div>
 
+<button id="tabParts" class="menuTab" data-menu="partsPanel">Parts</button>
 <aside id="partsPanel" class="panel autohide" aria-label="Parts">
   <h3>Parts <span class="kbd" id="partCount"></span></h3>
   <div class="list" id="partList"></div>
 </aside>
 
+<button id="tabTools" class="menuTab" data-menu="tools">View</button>
 <aside id="tools" class="panel autohide" aria-label="View controls">
   <h3>Skin</h3>
   <div class="seg" id="shellSeg" style="margin-bottom:10px">
@@ -220,6 +235,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
   <div class="nav"><button id="tourPrev" aria-label="Previous step">◀</button><button id="tourNext" aria-label="Next step">▶</button></div>
 </section>
 
+<button id="tabStats" class="menuTab" data-menu="stats">Stats</button>
 <div id="stats" class="panel autohide"></div>
 <div id="tip"></div>
 <div id="loader"><div style="text-align:center"><b>Loading survey drone</b><div class="bar"><b id="loadBar"></b></div><small id="loadTxt">0 KB</small></div></div>
