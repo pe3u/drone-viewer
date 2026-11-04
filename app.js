@@ -488,7 +488,7 @@ function freeArea() {
 addEventListener('resize', () => (areaCache = null));
 
 // ------------------------------------------------------------------ auto-hiding menus
-// Each menu rests at 1 % opacity and opens while the pointer is over the place it lives. Touch screens have no
+// Each menu rests as an outline, its contents at 1 % opacity, and opens while the pointer is over the place it lives. Touch screens have no
 // hover: a tap shows them all and they fade again after a few seconds without input.
 const MENUS = [...document.querySelectorAll('.autohide')];
 const HOVER = matchMedia('(hover: hover) and (pointer: fine)').matches;
@@ -532,13 +532,11 @@ document.addEventListener('focusout', (e) => { const el = MENUS.find((m) => m.co
 wakeAll();   // show the menus for a moment on load so it is clear where they live
 
 // ------------------------------------------------------------------ label placement
-// Labels sit on one rigid ring around the drone. Every label owns a fixed slot, in the order its part lies
-// around the airframe seen from above, and the ring turns with the camera's azimuth: spacing and order never
-// change, so orbiting moves the text as a single smooth rotation. The ring is centred on the orbit point and
-// sized from the drone's span, so it stays put too.
+// Labels sit on a fixed ring around the drone. Every label owns a slot, in the order its part lies around the
+// airframe in the opening 3/4 view. The ring is centred on the orbit point and sized from the drone's span, so
+// orbiting leaves the text exactly where it is: only the leader lines move.
 const RING_GAP = 14, RING_STAGGER = 26;   // alternate slots step out near the top and bottom, where text runs along the circle
-const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
-let ringTurn = null;
+const RING_VIEW = Math.atan2(-5.2, 5.6);  // azimuth of the opening view
 
 function layoutRing() {
   const c = bounds.getCenter(new THREE.Vector3());
@@ -547,15 +545,12 @@ function layoutRing() {
   let sx = 0, sy = 0;
   list.forEach(({ az }, k) => { sx += Math.cos(az - k * step); sy += Math.sin(az - k * step); });
   const a0 = Math.atan2(sy, sx);    // best fit of the even slots onto the parts' real directions
-  list.forEach(({ L }, k) => { L.slot = a0 + k * step; L.level = k % 2; });
+  list.forEach(({ L }, k) => { L.slot = a0 + k * step + RING_VIEW; L.level = k % 2; });
 }
-function labelRing(W, H, box, dt) {
+function labelRing(W, H, box) {
   const size = bounds.getSize(_v);
   const half = Math.max(size.x, size.y, size.z) / 2 * (1 + 0.4 * S.explode);
-  const off = _v.copy(camera.position).sub(controls.target), dist = off.length();
-  const want = Math.atan2(off.x, off.z);
-  // eased, so passing over the pole (where the azimuth spins) turns the ring instead of snapping it
-  ringTurn = ringTurn === null ? want : ringTurn + clamp(angDiff(want, ringTurn) * (1 - Math.exp(-8 * dt)), -3 * dt, 3 * dt);
+  const dist = camera.position.distanceTo(controls.target);
   const cx = W / 2, cy = H / 2;
   const fit = dist > half * 1.02 ? (H / 2) * half / (Math.sqrt(dist * dist - half * half) * Math.tan(camera.fov * Math.PI / 360)) : Infinity;
   // zoomed in, the drone outgrows the window: the ring stops at the largest one the window holds
@@ -563,13 +558,13 @@ function labelRing(W, H, box, dt) {
   return { cx, cy, R: Math.min(fit + RING_GAP, rMax) };
 }
 
-function updateLabels(dt) {
+function updateLabels() {
   const W = innerWidth, H = innerHeight;
   const cs = getComputedStyle(document.documentElement);
   const lead = cs.getPropertyValue('--leader');
   const box = freeArea();
   const fc = S.focus ? partCenter(S.focus) : null;
-  const ring = labelRing(W, H, box, dt);
+  const ring = labelRing(W, H, box);
   for (const L of labelEls) {
     const p = L.p;
     partCenter(p, _v);
@@ -581,7 +576,7 @@ function updateLabels(dt) {
     const ax = (_v.x * 0.5 + 0.5) * W, ay = (-_v.y * 0.5 + 0.5) * H;
     if (!L.w) { L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; }
     // the circle touches the text's inner edge: text grows outward at every angle, with no left / right switch
-    const c = Math.cos(L.slot + ringTurn), s = Math.sin(L.slot + ringTurn);
+    const c = Math.cos(L.slot), s = Math.sin(L.slot);
     const r = ring.R + L.level * RING_STAGGER * Math.abs(s);
     const x = clamp(ring.cx + c * r + (c - 1) * L.w / 2, box.l, box.r - L.w);
     const y = clamp(ring.cy + s * r + (s - 1) * L.h / 2, box.t, box.b - L.h);
@@ -948,7 +943,7 @@ function tick(dt) {
   controls.update();
   updateHover();
   renderer.render(scene, camera);
-  if (parts.length) updateLabels(dt);
+  if (parts.length) updateLabels();
   fpsAcc += dt; fpsN++;
   statT += dt;
   if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
