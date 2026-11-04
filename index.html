@@ -127,9 +127,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
 #loader small { color: var(--ink-3); font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; }
 .kbd { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 10.5px; color: var(--ink-3); }
 #mobileToggle { display: none; }
-/* menus stay hidden and open when the pointer comes over the place they live (touch: any tap shows them) */
-.autohide { transition: opacity .3s ease, visibility 0s linear 0s; }
-.autohide:not(.shown) { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; transition: opacity .5s ease, visibility 0s linear .5s; }
+/* menus rest at 1 % opacity and open when the pointer comes over the place they live (touch: any tap shows them) */
+.autohide { transition: opacity .3s ease; }
+.autohide:not(.shown) { opacity: .01 !important; pointer-events: none !important; transition: opacity .5s ease; }
 @media (prefers-reduced-motion: reduce) { .autohide, .autohide:not(.shown) { transition: none; } }
 @media (max-width: 900px) {
   header.title { max-width: calc(100vw - 170px); left: 14px; top: 14px; }
