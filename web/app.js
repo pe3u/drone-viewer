@@ -31,7 +31,9 @@ const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.6;
 
-const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.02, 80);
+// a hidden tab / pane can report a 0 x 0 window: keep the aspect finite or the camera turns NaN
+const viewAspect = () => (innerWidth > 0 && innerHeight > 0 ? innerWidth / innerHeight : 1.6);
+const camera = new THREE.PerspectiveCamera(32, viewAspect(), 0.02, 80);
 camera.position.set(-3.4, 1.9, 3.6);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -73,7 +75,7 @@ const S = {
   explode: 0, explodeT: 0, ctrl: 0, ctrlT: 0,
   shell: 'cutaway', skinOp: 1, cut: 0,
   section: 'off', secPos: 0.5, secPosT: 0.5, flip: false, caps: true, sweep: null,
-  labels: innerWidth > 700, rotate: true, spin: false, spinRate: 0, wire: false, ground: true, pack: true, packOp: 1,
+  labels: innerWidth > 700, rotate: true, spin: false, spinRate: 0, wire: false, ground: true,
   hovered: null, selected: null, isolate: null, focus: null,
   hidden: new Set(),
 };
@@ -143,6 +145,7 @@ function onLoad(gltf) {
   buildCaps();
   buildPartList();
   buildLabels();
+  buildSilhouette();
   for (const n of S.hidden) byName[n] && byName[n].row.classList.add('hidden');
   S.selected = byName[keep.sel] || null;
   S.isolate = byName[keep.iso] || null;
@@ -357,8 +360,6 @@ function setShell(mode, instant) {
 const skinTarget = () => ({ solid: 1, cutaway: 1, ghost: 0.13, hidden: 0 })[S.shell];
 const isPanel = (p) => p.name === 'Access_Panel_L' || p.name === 'Access_Panel_R';
 const partVisible = (p) => !S.hidden.has(p.name);
-// foam and ducts that pack the bays: faded out when a tour stop needs to show the units they surround
-const PACKING = new Set(['Foam_Cradles', 'Foam_Infill', 'Cable_Ducts']);
 const HL = new THREE.Color();
 const ACCENT = new THREE.Color(0x2f73ff);
 
@@ -403,7 +404,6 @@ function updateParts(dt, time) {
   S.ctrl = approach(S.ctrl, S.ctrlT, 2.5, dt);
   S.skinOp = approach(S.skinOp, skinTarget(), 5, dt);
   S.cut = approach(S.cut, S.shell === 'solid' ? 0 : 1, 3.5, dt);
-  S.packOp = approach(S.packOp, S.pack ? 1 : 0, 4, dt);
   const xe = S.explode;
   for (const p of parts) {
     const k = easeIO(clamp((xe * 1.45 - p.delay) / 1.0, 0, 1));
@@ -423,7 +423,6 @@ function updateParts(dt, time) {
       p.node.position.copy(piv).sub(_pv2.copy(p.hinge.pivot).applyQuaternion(p.node.quaternion));
     }
     if (p.name === 'Wiring_Harness') op *= 1 - smooth(0.04, 0.3, xe);
-    if (PACKING.has(p.name)) op *= S.packOp;
     if (S.isolate && S.isolate !== p) op *= 0.07;
     p.opacity = op;
     const vis = partVisible(p) && op > 0.004;
@@ -478,89 +477,170 @@ function buildLabels() {
 const _v = new THREE.Vector3();
 let areaCache = null;
 function freeArea() {
-  // screen rectangle not covered by the floating panels (recomputed on resize / panel toggles)
+  // screen rectangle labels may use: below the title, above the tour bar (the menus hide themselves)
   if (areaCache) return areaCache;
   const W = innerWidth, H = innerHeight;
-  const r = (sel) => { const el = $(sel); const b = el.getBoundingClientRect(); return b.width && getComputedStyle(el).display !== 'none' ? b : null; };
-  const idle = document.body.classList.contains('idle');   // hidden menus free their screen space
-  const parts = idle ? null : r('#partsPanel'), tools = idle ? null : r('#tools');
-  const tourB = r('#tour'), head = $('header.title').getBoundingClientRect();
-  areaCache = {
-    l: parts && parts.top < H * 0.6 ? parts.right + 8 : 8,
-    r: tools ? tools.left - 8 : W - 8,
-    t: Math.max(head.bottom + 6, 8),
-    b: (tourB ? tourB.top : H) - 8,
-  };
+  const tour = $('#tour'), tourB = getComputedStyle(tour).display !== 'none' ? tour.getBoundingClientRect() : null;
+  const head = $('header.title').getBoundingClientRect();
+  areaCache = { l: 8, r: W - 8, t: Math.max(head.bottom + 6, 8), b: (tourB && tourB.height ? tourB.top : H) - 8 };
   return areaCache;
 }
 addEventListener('resize', () => (areaCache = null));
 
 // ------------------------------------------------------------------ auto-hiding menus
-const IDLE_MS = matchMedia('(hover: none)').matches ? 5000 : 3000;
-let idleTimer = 0;
-function setIdle(on) {
-  if (document.body.classList.contains('idle') === on) return;
-  document.body.classList.toggle('idle', on);
-  areaCache = null;
+// Each menu stays hidden and opens while the pointer is over the place it lives. Touch screens have no
+// hover: a tap shows them all and they fade again after a few seconds without input.
+const MENUS = [...document.querySelectorAll('.autohide')];
+const HOVER = matchMedia('(hover: hover) and (pointer: fine)').matches;
+const REVEAL_PAD = 24, HIDE_MS = 600, IDLE_MS = 5000;
+const hideTimers = new Map();
+let dragMenu = null, lastX = -1e4, lastY = -1e4;
+function showMenu(el, on) {
+  clearTimeout(hideTimers.get(el)); hideTimers.delete(el);
+  el.classList.toggle('shown', on);
 }
-function goIdle() {
-  // stay visible while the pointer rests on a menu or the keyboard is working inside one
-  if (document.querySelector('.autohide:hover, .autohide :focus-visible')) { idleTimer = setTimeout(goIdle, IDLE_MS); return; }
-  setIdle(true);
+function nearMenu(el, x, y) {
+  const b = el.getBoundingClientRect();
+  return b.width > 0 && x > b.left - REVEAL_PAD && x < b.right + REVEAL_PAD && y > b.top - REVEAL_PAD && y < b.bottom + REVEAL_PAD;
 }
-function wake() {
-  setIdle(false);
-  clearTimeout(idleTimer);
-  idleTimer = setTimeout(goIdle, IDLE_MS);
+function keepMenu(el) {
+  return el === dragMenu || nearMenu(el, lastX, lastY) || !!el.querySelector(':focus-visible');
 }
-for (const ev of ['pointermove', 'pointerdown', 'wheel', 'keydown', 'touchstart']) addEventListener(ev, wake, { passive: true });
-wake();
+function hideSoon(el, ms = HIDE_MS) {
+  if (!el.classList.contains('shown') || hideTimers.has(el)) return;
+  hideTimers.set(el, setTimeout(() => { hideTimers.delete(el); if (keepMenu(el)) hideSoon(el); else showMenu(el, false); }, ms));
+}
+function trackPointer(x, y) {
+  lastX = x; lastY = y;
+  for (const el of MENUS) {
+    if (nearMenu(el, x, y)) showMenu(el, true);
+    else if (el !== dragMenu) hideSoon(el);
+  }
+}
+function wakeAll() {
+  for (const el of MENUS) { showMenu(el, true); hideSoon(el, IDLE_MS); }
+}
+addEventListener('pointermove', (e) => { if (e.pointerType !== 'touch') trackPointer(e.clientX, e.clientY); }, { passive: true });
+addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'touch' || !HOVER) { wakeAll(); return; }
+  dragMenu = MENUS.find((el) => el.contains(e.target)) || null;   // keep a menu open while dragging its slider out of it
+}, { passive: true });
+addEventListener('pointerup', () => { dragMenu = null; trackPointer(lastX, lastY); }, { passive: true });
+document.documentElement.addEventListener('pointerleave', () => { lastX = lastY = -1e4; MENUS.forEach((el) => hideSoon(el)); });
+addEventListener('keydown', (e) => { if (e.key === 'Tab') wakeAll(); });
+document.addEventListener('focusin', (e) => { const el = MENUS.find((m) => m.contains(e.target)); if (el) showMenu(el, true); });
+document.addEventListener('focusout', (e) => { const el = MENUS.find((m) => m.contains(e.target)); if (el) hideSoon(el); });
+wakeAll();   // show the menus for a moment on load so it is clear where they live
+
+// ------------------------------------------------------------------ label placement
+// Labels sit beside the drone, never on it: a sample of every visible part's vertices is projected each
+// frame into screen rows (leftmost / rightmost drone pixel per 4 px row). A label goes just past the
+// drone's extent across its own height, on the side of its anchor.
+const SIL_MAX = 4000, SIL_ROW = 4, SIL_GAP = 12;
+let silSamples = [], rowMin = new Float32Array(0), rowMax = new Float32Array(0);
+function buildSilhouette() {
+  const meshes = [];
+  let total = 0;
+  for (const p of parts) for (const m of p.meshes) { meshes.push([p, m]); total += m.geometry.attributes.position.count; }
+  const stride = Math.max(1, Math.ceil(total / SIL_MAX));
+  silSamples = meshes.map(([p, m]) => {
+    const pos = m.geometry.attributes.position, idx = [];
+    const st = Math.max(1, Math.min(stride, Math.floor(pos.count / 8)));
+    for (let i = 0; i < pos.count; i += st) idx.push(i);
+    return { p, m, pos, idx };
+  });
+}
+const _sv = new THREE.Vector3();
+function silhouette(W, H) {
+  const rows = Math.ceil(H / SIL_ROW) + 1;
+  if (rowMin.length !== rows) { rowMin = new Float32Array(rows); rowMax = new Float32Array(rows); }
+  rowMin.fill(Infinity); rowMax.fill(-Infinity);
+  let x0 = Infinity, x1 = -Infinity, n = 0;
+  for (const { p, m, pos, idx } of silSamples) {
+    if (!m.visible || p.opacity < 0.08) continue;
+    for (const i of idx) {
+      _sv.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+      if (S.section !== 'off' && clipPlane.distanceToPoint(_sv) < 0) continue;
+      _sv.project(camera);
+      if (_sv.z > 1) continue;
+      const x = (_sv.x * 0.5 + 0.5) * W, y = (-_sv.y * 0.5 + 0.5) * H;
+      const r = Math.floor(y / SIL_ROW);
+      if (r < 0 || r >= rows) continue;
+      if (x < rowMin[r]) rowMin[r] = x;
+      if (x > rowMax[r]) rowMax[r] = x;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      n++;
+    }
+  }
+  return n ? { cx: (x0 + x1) / 2 } : null;
+}
+function droneSpan(y0, y1) {
+  // drone's horizontal extent over a band of rows (padded so sparse samples on thin spans still count)
+  let mn = Infinity, mx = -Infinity;
+  const a = Math.max(0, Math.floor((y0 - SIL_GAP) / SIL_ROW)), b = Math.min(rowMin.length - 1, Math.floor((y1 + SIL_GAP) / SIL_ROW));
+  for (let r = a; r <= b; r++) { if (rowMin[r] < mn) mn = rowMin[r]; if (rowMax[r] > mx) mx = rowMax[r]; }
+  return [mn, mx];
+}
+function placeBeside(it, box) {
+  const w = it.L.w, [mn, mx] = droneSpan(it.ly, it.ly + it.L.h);
+  if (mn === Infinity) { it.lx = it.side > 0 ? it.ax + SIL_GAP : it.ax - SIL_GAP - w; return; }
+  const right = mx + SIL_GAP, left = mn - SIL_GAP - w;
+  const fitsR = right + w <= box.r, fitsL = left >= box.l;
+  it.lx = it.side > 0 ? (fitsR || !fitsL ? right : left) : (fitsL || !fitsR ? left : right);
+}
 
 function updateLabels() {
   const W = innerWidth, H = innerHeight;
   const cs = getComputedStyle(document.documentElement);
   const lead = cs.getPropertyValue('--leader');
-  const c = bounds.getCenter(new THREE.Vector3()).project(camera);
-  const cx = (c.x * 0.5 + 0.5) * W, cy = (-c.y * 0.5 + 0.5) * H;
   const items = [];
   const box = freeArea();
   const fc = S.focus ? partCenter(S.focus) : null;
+  const c = silhouette(W, H);
   for (const L of labelEls) {
     const p = L.p;
     partCenter(p, _v);
-    let show = (S.labels || p === S.focus || p === S.selected) && partVisible(p) && (p.opacity > 0.08 || (p.skin && S.shell !== 'hidden'));
+    let show = !!c && (S.labels || p === S.focus || p === S.selected) && partVisible(p) && (p.opacity > 0.08 || (p.skin && S.shell !== 'hidden'));
     if (fc && _v.distanceTo(fc) > 0.42 && p !== S.focus) show = false;
     if (S.section !== 'off' && clipPlane.distanceToPoint(_v) < -0.02) show = false;
     _v.project(camera);
     if (!show || _v.z > 1) { L.el.style.opacity = 0; L.el.style.pointerEvents = 'none'; L.line.style.opacity = 0; L.dot.style.opacity = 0; continue; }
     const ax = (_v.x * 0.5 + 0.5) * W, ay = (-_v.y * 0.5 + 0.5) * H;
     if (!L.w) { L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; }
-    let dx = ax - cx, dy = ay - cy;
-    const d = Math.hypot(dx, dy) || 1;
-    dx /= d; dy /= d;
-    const reach = 46 + Math.min(70, d * 0.18);
-    let lx = ax + dx * reach, ly = ay + dy * reach;
-    lx = dx >= 0 ? lx : lx - L.w;
-    ly -= L.h / 2;
-    items.push({ L, ax, ay, lx, ly });
+    items.push({ L, ax, ay, side: ax >= c.cx ? 1 : -1, lx: 0, ly: clamp(ay - L.h / 2, box.t, box.b - L.h) });
   }
-  // relax vertical overlaps
-  items.sort((a, b) => a.ly - b.ly);
-  for (let it = 0; it < 4; it++) {
-    for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
-      const a = items[i], b = items[j];
-      const ox = Math.min(a.lx + a.L.w, b.lx + b.L.w) - Math.max(a.lx, b.lx);
-      const oy = a.ly + a.L.h + 4 - b.ly;
-      if (ox > -6 && oy > 0) { a.ly -= oy / 2; b.ly += oy / 2; }
+  // stack each side's labels without overlaps, keeping their anchor order: overlapping neighbours merge
+  // into a block centred on its labels' wanted heights, then the labels are set beside the drone
+  for (const side of [-1, 1]) {
+    const blocks = [];
+    for (const it of items.filter((q) => q.side === side).sort((a, b) => a.ly - b.ly)) {
+      let blk = { items: [it], want: it.ly, h: it.L.h + 2, top: it.ly };
+      for (;;) {
+        blk.top = clamp(blk.want / blk.items.length, box.t, Math.max(box.t, box.b - blk.h));
+        const prev = blocks[blocks.length - 1];
+        if (!prev || prev.top + prev.h <= blk.top) break;
+        blocks.pop();
+        // wanted top of the merged block: mean of each label's wanted top minus its offset inside the block
+        let off = prev.h, want = prev.want;
+        for (const q of blk.items) { want += q.ly - off; off += q.L.h + 2; }
+        blk = { items: prev.items.concat(blk.items), want, h: prev.h + blk.h, top: 0 };
+      }
+      blocks.push(blk);
+    }
+    for (const blk of blocks) {
+      let y = blk.top;
+      for (const it of blk.items) { it.ly = y; y += it.L.h + 2; }
     }
   }
+  for (const it of items) placeBeside(it, box);
   for (const { L, ax, ay, lx, ly } of items) {
-    const x = clamp(lx, box.l, box.r - L.w), y = clamp(ly, box.t, box.b - L.h);
+    const x = clamp(lx, box.l, box.r - L.w), y = ly;
     L.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
     L.el.style.opacity = 1;
     L.el.style.pointerEvents = 'auto';
     L.el.classList.toggle('sel', L.p === S.selected || L.p === S.focus);
-    const ex = clamp(ax, x, x + L.w), ey = clamp(ay, y, y + L.h);
+    const ex = clamp(ax, x - 3, x + L.w + 3), ey = clamp(ay, y + 3, y + L.h - 3);
     L.line.setAttribute('x1', ax); L.line.setAttribute('y1', ay);
     L.line.setAttribute('x2', ex); L.line.setAttribute('y2', ey);
     L.line.setAttribute('stroke', lead);
@@ -659,13 +739,13 @@ const TOUR = [
   { t: 'Cutaway', x: 'The side access panels come off to expose the avionics bay running from the nose to the wing.',
     cam: [-0.9, 0.55, 2.3], tgt: [-0.2, -0.04, 0], shell: 'cutaway', ex: 0, orbit: 0.3, d: 6 },
   { t: 'LiDAR sensor', x: 'Chin-mounted 360° multi-beam laser scanner. Its cooling rings sit inside the nose bay.',
-    cam: [-1.45, -0.18, 0.95], tgt: [-0.72, -0.14, 0], shell: 'cutaway', ex: 0, focus: 'LiDAR_Sensor', pack: false, orbit: 0.5, d: 6 },
+    cam: [-1.45, -0.18, 0.95], tgt: [-0.72, -0.14, 0], shell: 'cutaway', ex: 0, focus: 'LiDAR_Sensor', orbit: 0.5, d: 6 },
   { t: 'Mapping camera', x: 'Full-frame camera on a 2-axis gimbal, hung from rubber dampers through a belly cut-out.',
-    cam: [-1.05, -0.38, 0.85], tgt: [-0.52, -0.2, 0], shell: 'cutaway', ex: 0, focus: 'Mapping_Camera', pack: false, orbit: 0.5, d: 6 },
+    cam: [-1.05, -0.38, 0.85], tgt: [-0.52, -0.2, 0], shell: 'cutaway', ex: 0, focus: 'Mapping_Camera', orbit: 0.5, d: 6 },
   { t: 'Flight controller & IMU', x: 'Autopilot stack on vibration grommets, next to the gold tactical-grade INS that georeferences every laser return.',
-    cam: [-0.62, 0.22, 0.72], tgt: [-0.44, -0.05, 0], shell: 'cutaway', ex: 0, focus: 'Flight_Controller', pack: false, orbit: 0.4, d: 6 },
+    cam: [-0.62, 0.22, 0.72], tgt: [-0.44, -0.05, 0], shell: 'cutaway', ex: 0, focus: 'Flight_Controller', orbit: 0.4, d: 6 },
   { t: 'Data processing unit', x: 'Finned aluminium computer that time-syncs LiDAR, camera and INS data and logs it to SSD.',
-    cam: [-0.3, 0.24, 0.68], tgt: [-0.17, -0.04, 0], shell: 'cutaway', ex: 0, focus: 'Data_Processing_Unit', pack: false, orbit: 0.4, d: 6 },
+    cam: [-0.3, 0.24, 0.68], tgt: [-0.17, -0.04, 0], shell: 'cutaway', ex: 0, focus: 'Data_Processing_Unit', orbit: 0.4, d: 6 },
   { t: 'Battery pack', x: 'Two hull-conforming 6S Li-ion packs fill the centre bay on the centre of gravity, under the wing carry-through.',
     cam: [0.02, 0.28, 0.72], tgt: [0.09, -0.04, 0], shell: 'cutaway', ex: 0, focus: 'Battery_Pack', orbit: 0.4, d: 6 },
   { t: 'Mission systems', x: 'Stacked above the avionics deck: edge-AI payload computer, mirrored SSD storage and a satcom / LTE modem for beyond-line-of-sight links.',
@@ -678,7 +758,7 @@ const TOUR = [
     cam: [1.75, 0.4, 0.95], tgt: [0.9, 0.04, 0], shell: 'solid', ex: 0, focus: 'Electric_Motor', spin: true, orbit: 0.6, d: 7 },
   { t: 'Flight controls', x: 'Ailerons, flaps, elevators and rudder swing on their hinge lines, each driven by its own servo and pushrod.',
     cam: [-1.9, 1.25, 2.6], tgt: [0.15, 0.0, 0.2], shell: 'solid', ex: 0, ctrl: true, spin: true, orbit: 0.9, d: 8 },
-  { t: 'Longitudinal section', x: 'A capped cut along the centreline: more than 80 % of the fuselage volume is packed with equipment, batteries, ducts and moulded foam.',
+  { t: 'Longitudinal section', x: 'A capped cut along the centreline: about 60 % of the fuselage volume is taken up by equipment, batteries and wiring.',
     cam: [0.05, 0.15, 3.3], tgt: [0.05, 0, 0], shell: 'solid', ex: 0, sec: { a: 'z', from: 0.16, to: 0.0 }, orbit: 0, d: 8 },
   { t: 'Station cuts', x: 'Sweeping a transverse plane from nose to tail through skins, bulkheads and payload.',
     cam: [-2.1, 0.75, 1.5], tgt: [0, 0, 0], shell: 'solid', ex: 0, sec: { a: 'x', from: -0.8, to: 0.6 }, orbit: 0.2, d: 9 },
@@ -718,8 +798,6 @@ function applyStep(i) {
   $('#tSpin').classList.toggle('on', S.spin);
   S.ctrlT = s.ctrl ? 1 : 0;
   $('#tCtrl').classList.toggle('on', !!s.ctrl);
-  S.pack = s.pack !== false;
-  $('#tPack').classList.toggle('on', S.pack);
   S.isolate = null;
   if (s.sec) {
     S.sweep = s.sec;
@@ -841,7 +919,6 @@ $('#tLabels').classList.toggle('on', S.labels);
 toggle('#tSpin', 'spin');
 $('#tCtrl').addEventListener('click', () => { S.ctrlT = S.ctrlT ? 0 : 1; $('#tCtrl').classList.toggle('on', !!S.ctrlT); });
 toggle('#tWire', 'wire');
-toggle('#tPack', 'pack');
 toggle('#tGround', 'ground', () => { ground.visible = grid.visible = S.ground; });
 $('#tTheme').addEventListener('click', () => {
   const dark = !isDark();
@@ -882,7 +959,7 @@ addEventListener('keydown', (e) => {
   if (e.key === 'Escape') select(null);
 });
 addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
+  camera.aspect = viewAspect();
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
   labelEls.forEach((L) => (L.w = 0));

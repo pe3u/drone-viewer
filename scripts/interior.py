@@ -351,92 +351,6 @@ def build_belly_battery(root):
                                       "adding ~50 % endurance while keeping the CG low.", 57))
 
 
-def lidar_slabs(pb, x0, x1, top, n):
-    """Foam around the LiDAR's internal cooling fins, as thin slabs following the round body."""
-    lid_x, lid_z = -0.720, -0.105
-    for k in range(n):
-        a, b = x0 + (x1 - x0) * k / n, x0 + (x1 - x0) * (k + 1) / n
-        dx = 0.0 if a <= lid_x <= b else min(abs(a - lid_x), abs(b - lid_x))
-        a, b = a + 0.0003, b - 0.0003                       # slabs must not share faces (stay separate shells)
-        def chord(R):
-            return math.sqrt(R * R - dx * dx) if dx < R else 0.0
-        cfin, cfl = chord(0.0600), chord(0.0705)
-        flange = [(-cfl, cfl, -INF, -0.097)] if cfl else []
-        con = a < -0.684 and b > -0.708                     # connector on top of the scanner
-        if not cfin:
-            conform(pb, a, b, (-INF, INF, -INF, top), "foam", keep=flange, bus=False, centre=(0.0, -0.060))
-            continue
-        if top + 0.042 > 0.008:
-            conform(pb, a, b, (-INF, INF, -0.042, top), "foam", bus=False,
-                    keep=[(-0.013, 0.013, -INF, -0.028)] if con else (), centre=(0.0, 0.5 * (top - 0.028)) if con else None)
-        for rect in sides(cfin, -INF, -0.042):
-            conform(pb, a, b, rect, "foam", keep=flange, bus=False)
-
-
-def build_cradles(root):
-    """EPP foam cradles packing the gaps around the units."""
-    pb = PB("Foam_Cradles")
-    # nose bay, around the LiDAR (stays below the shelf and clear of the scanner feeds)
-    lidar_slabs(pb, -0.7945, -0.7015, -0.0065, dl.segs(16, 6))
-    lidar_slabs(pb, -0.7015, NOSE[1], -0.037, dl.segs(4, 2))
-    for rect in sides(0.046, -0.037, -0.013):
-        conform(pb, -0.7015, NOSE[1], rect, "foam", bus=False)      # beside the scanner feeds
-    # B1 forward of the IMU / camera, full lower deck
-    conform(pb, B1[0], -0.587, (-INF, INF, -INF, TRAY[0] - 0.001), "foam", bus=False)
-    lo = TRAY[0] - 0.0005
-    for rect in sides(0.040, -INF, lo):
-        conform(pb, -0.586, -0.474, rect, "foam", bus=False)          # beside the camera and IMU
-    for rect in sides(0.043, BUS[1] + 0.001, lo):
-        conform(pb, -0.466, B1[1], rect, "foam")                      # beside the flight controller
-    for rect in sides(0.054, BUS[1] + 0.001, lo):
-        conform(pb, B2[0], -0.068, rect, "foam")                      # beside the DPU
-    conform(pb, -0.341, B1[1], (-0.042, 0.042, -0.044, lo), "foam")   # behind the flight controller
-    conform(pb, B2[0], -0.247, (-0.053, 0.053, -0.040, lo), "foam")   # in front of the DPU
-    conform(pb, -0.093, -0.068, (-0.053, 0.053, -0.071, lo), "foam")  # aft of the DPU
-    for rect in sides(0.020, -0.060, lo, 0.042):
-        conform(pb, -0.487, -0.456, rect, "foam", bus=False)          # IMU / FC cable slot sides
-    # under the bridge plate, beside the radio and GNSS receiver
-    for x0, x1 in ((-0.405, B1[1]), (B2[0], -0.196)):
-        for rect in sides(0.028, 0.0515, 0.0785, 0.050):
-            conform(pb, x0, x1, rect, "foam", bus=False)
-    # above the bridge plate and along the hull sides (centre lane left for coax and the RC leads)
-    for x0, x1 in ((-0.425, B1[1] - 0.003), (B2[0], -0.178)):
-        for rect in sides(0.020, 0.0855, INF):
-            conform(pb, x0, x1, rect, "foam", bus=False)
-        for rect in sides(0.054, 0.0515, 0.0850):
-            conform(pb, x0, x1, rect, "foam", bus=False, centre=(math.copysign(0.060, rect[0] + rect[1]), 0.060))
-    for rect in sides(0.026, 0.0495, INF):
-        conform(pb, -0.172, -0.145, rect, "foam", bus=False)
-    # centre lane where no coax, RC lead or antenna mount passes
-    conform(pb, -0.425, -0.396, (-0.0195, 0.0195, 0.0855, INF), "foam", bus=False)
-    conform(pb, -0.228, -0.178, (-0.0195, 0.0195, 0.0945, INF), "foam", bus=False)
-    conform(pb, -0.420, -0.3845, (-0.027, 0.027, 0.0515, 0.0785), "foam", bus=False)
-    # over the PDB and ESC, beside the ESC, and between the tail-servo pushrods and the hull
-    conform(pb, 0.250, 0.396, (-0.028, 0.028, -0.0215, -0.0075), "foam", bus=False)
-    for rect in sides(0.0185, -0.0425, -0.0225, 0.029):
-        conform(pb, 0.300, 0.396, rect, "foam", bus=False)
-    for rect in sides(0.024, -0.0065, 0.011):
-        conform(pb, 0.424, B4[1], rect, "foam", bus=False)
-    return pb.finish(parent=root, smooth_angle=40,
-                     props=part_props("Foam Cradles", "Airframe", (0.0, 0, -0.18),
-                                      "Moulded EPP foam inserts that cradle the units, damp vibration and keep "
-                                      "the cable risers open.", 8))
-
-
-def build_ducts(root):
-    """Cable ducts: floor-corner trunking and the harness tray between the lower and mid decks."""
-    pb = PB("Cable_Ducts")
-    for x0, x1 in ((-0.466, B1[1]), (B2[0], -0.069), B3):
-        for rect in sides(BUS[0] + 0.0005, -0.0715, BUS[1] - 0.0005):
-            conform(pb, x0, x1, rect, "grey", bus=False)
-    for x0, x1 in ((B1[0], B1[1]), (B2[0], -0.069)):
-        conform(pb, x0, x1, (-INF, INF, TRAY[0], TRAY[1]), "grey", bus=False)
-    return pb.finish(parent=root, smooth_angle=35,
-                     props=part_props("Cable Ducts", "Power", (0.0, 0, 0.12),
-                                      "Slotted PVC trunking along the floor corners and a harness tray between "
-                                      "the decks: power, data and servo looms run inside.", 48))
-
-
 def build_remote_id(root):
     pb = PB("Remote_ID_ADSB")
     for rect, mat in zip(sides(0.030, -0.039, -0.0075), ("dark", "grey")):
@@ -484,5 +398,4 @@ def build_tail(root):
 def build(root):
     return [build_nose_bumper(root), build_lidar_cu(root), build_payload_computer(root), build_satcom(root),
             build_storage(root), build_fan(root), build_bms(root), build_parachute(root),
-            build_payload_battery(root), build_belly_battery(root), build_cradles(root), build_ducts(root),
-            build_remote_id(root), build_tail(root)]
+            build_payload_battery(root), build_belly_battery(root), build_remote_id(root), build_tail(root)]
