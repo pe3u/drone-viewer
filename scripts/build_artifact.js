@@ -7,7 +7,6 @@ const web = path.join(ROOT, "web"), out = path.join(ROOT, "artifact");
 
 let html = fs.readFileSync(path.join(web, "index.html"), "utf8");
 const app = fs.readFileSync(path.join(web, "app.js"), "utf8");
-const airflow = fs.readFileSync(path.join(web, "airflow.js"), "utf8");
 const b64 = (f) => fs.readFileSync(path.join(out, "raw", f)).toString("base64");
 
 html = html
@@ -22,7 +21,6 @@ html = html
   .replace(/<meta name="viewport"[^>]*>\s*/i, "");
 
 const embed = `<script>window.DRONE_EMBED = { hd: "${b64("drone.glb")}", lite: "${b64("drone_lite.glb")}" };</script>\n`;
-html = html.replace('<script src="./airflow.js"></script>', () => "<script>" + airflow + "</script>");
 html = html.replace('<script type="module" src="./app.js"></script>', () => embed + "<script type=\"module\">\n" + app + "\n</script>");
 if (!html.includes("window.DRONE_EMBED")) throw new Error("app.js script tag not found");
 fs.writeFileSync(path.join(out, "survey-drone.html"), html);
