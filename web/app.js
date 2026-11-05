@@ -785,9 +785,10 @@ function updateLabels() {
     if (!L.w) { L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; }
     // the circle touches the text's inner edge: text grows outward at every angle, with no left / right switch
     const c = Math.cos(L.slot), s = Math.sin(L.slot);
-    const r = ring.R + L.level * RING_STAGGER * Math.abs(s);
+    const tall = H > W * 1.3 ? 1.4 : 1;   // portrait: spread the ring into the free height so labels don't collide
+    const r = ring.R + L.level * RING_STAGGER * (tall > 1 ? 1.8 : 1) * Math.abs(s);
     const x = clamp(ring.cx + c * r + (c - 1) * L.w / 2, box.l, box.r - L.w);
-    const y = clamp(ring.cy + s * r + (s - 1) * L.h / 2, box.t, box.b - L.h);
+    const y = clamp(ring.cy + s * r * tall + (s - 1) * L.h / 2, box.t, box.b - L.h);
     L.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
     L.el.style.opacity = 1;
     L.el.style.pointerEvents = 'auto';
@@ -960,7 +961,10 @@ function applyStep(i) {
   controls.autoRotate = false;
 }
 
+// the tour always plays with labels on; stopping it puts back the viewer's own setting
+function setLabels(on) { S.labels = on; $('#tLabels').classList.toggle('on', on); }
 function startTour(i = 0) {
+  if (!tour.on) { tour.labels = S.labels; setLabels(true); }
   tour.on = true;
   $('#tourPlay').textContent = '❚❚';
   S.selected = null;
@@ -970,6 +974,7 @@ function startTour(i = 0) {
 function stopTour() {
   if (!tour.on) return;
   tour.on = false;
+  setLabels(tour.labels);
   S.sweep = null;
   S.focus = null;
   flight = null;
@@ -1066,7 +1071,7 @@ function toggle(id, key, after) {
   $(id).addEventListener('click', () => { S[key] = !S[key]; $(id).classList.toggle('on', S[key]); after && after(); });
 }
 toggle('#tRotate', 'rotate', () => { stopTour(); controls.autoRotate = S.rotate; });
-toggle('#tLabels', 'labels');
+toggle('#tLabels', 'labels', () => { tour.labels = S.labels; });
 $('#tLabels').classList.toggle('on', S.labels);
 toggle('#tSpin', 'spin');
 $('#tCtrl').addEventListener('click', () => { S.ctrlT = S.ctrlT ? 0 : 1; $('#tCtrl').classList.toggle('on', !!S.ctrlT); });
