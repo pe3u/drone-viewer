@@ -325,6 +325,7 @@ function ownMeshes(o) {
   return o.children.filter((c) => c.isMesh && !(c.userData && c.userData.label));
 }
 
+const PAINT = /^D_(skin|blue)/, PAINT_COLOR = 0.45, PAINT_SHEEN = 0.2;
 function collectPart(o) {
   const u = o.userData;
   const meshes = ownMeshes(o);
@@ -332,6 +333,12 @@ function collectPart(o) {
   const mats = [];
   for (const m of meshes) {
     m.material = m.material.clone();
+    if (PAINT.test(m.material.name)) {
+      // the paint is almost black already: what greys it is the room reflection, so that is turned down with the colour
+      m.material.color.multiplyScalar(PAINT_COLOR);
+      m.material.envMap = scene.environment;
+      m.material.envMapIntensity = PAINT_SHEEN;
+    }
     m.material.userData.base = { color: m.material.color.clone(), metalness: m.material.metalness, roughness: m.material.roughness };
     m.castShadow = true;
     m.receiveShadow = !!u.skin;   // interior stays lit like a cutaway illustration
