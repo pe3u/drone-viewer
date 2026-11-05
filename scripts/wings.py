@@ -11,9 +11,6 @@ PHI0, PHI1 = 3.0, 78.0
 WINGLET_LEN = 0.12
 SPLIT = 0.74          # chordwise hinge line
 NPTS = 22
-BLEND_E, BLEND_W = 0.62, 1.08     # leading-edge blend: 0.62 m ahead of the root at the hull, gone 1.08 m out
-PRESS_W = 0.12                    # the skin follows the hull at the root and is plain beyond this
-INNER = -0.003                    # the root sits inside the shell thickness
 
 
 def arc_len():
@@ -68,11 +65,7 @@ def twist(d):
     return -2.0 * min(d / D_STRAIGHT, 1.0)
 
 
-HULL_Y = dl.hull_side(ROOT_LE.x, ROOT_LE.z)
-D_HULL = (HULL_Y - ROOT_LE.y) / math.cos(math.radians(PHI0))
-
-
-def section(d, c0, c1, n=NPTS, tscale=1.0, shrink=0.0, blend=False):
+def section(d, c0, c1, n=NPTS, tscale=1.0, shrink=0.0):
     y, z, phi = frame(d)
     f = foil(d)
     f["t"] *= tscale
@@ -81,16 +74,9 @@ def section(d, c0, c1, n=NPTS, tscale=1.0, shrink=0.0, blend=False):
         cx = sum(p[0] for p in loop) / len(loop)
         cz = sum(p[1] for p in loop) / len(loop)
         loop = [(cx + (p[0] - cx) * shrink, cz + (p[1] - cz) * shrink) for p in loop]
-    t = d - D_HULL
-    if blend:
-        loop = dl.stretch_nose(loop, dl.blend_ext(t, BLEND_E, BLEND_W) / chord(d))
     pr = math.radians(phi)
     nrm = (0, -math.sin(pr), math.cos(pr))
-    pts = dl.place_section(loop, (x_le(d), y, z), chord(d), twist(d), nrm=nrm)
-    if blend and t < PRESS_W:
-        fade = 1 - dl.smoothstep(max(t, 0.0) / PRESS_W)
-        pts = [Vector((q.x, q.y + (dl.hull_side(q.x, q.z) - HULL_Y) * fade, q.z)) for q in pts]
-    return pts
+    return dl.place_section(loop, (x_le(d), y, z), chord(d), twist(d), nrm=nrm)
 
 
 def stations(d0, d1, step=0.06):
@@ -119,7 +105,7 @@ BLUE_TIP = 1.05
 
 def skin_lofts(pb, c0, c1, d0, d1, cap0=False, cap1=False, colour_rule=True):
     """Loft chord range c0..c1 over span d0..d1, painting blue bands."""
-    ds = sorted(set(all_stations(d0, d1)) | {D_HULL + t for t in dl.blend_stations(INNER, BLEND_W)})
+    ds = all_stations(d0, d1)
     cuts = sorted({d for d in (BLUE_ROOT, BLUE_TIP) if d0 < d < d1})
     segs = []
     edges = [d0] + cuts + [d1]
@@ -131,7 +117,7 @@ def skin_lofts(pb, c0, c1, d0, d1, cap0=False, cap1=False, colour_rule=True):
         mat = "skin"
         if colour_rule and (mid < BLUE_ROOT or mid > BLUE_TIP):
             mat = "blue"
-        pb.loft([section(d, c0, c1, blend=True) for d in seg], mat,
+        pb.loft([section(d, c0, c1) for d in seg], mat,
                 cap0=cap0 and k == 0, cap1=cap1 and k == len(segs) - 1)
 
 
@@ -145,11 +131,11 @@ def build_side(root, side):
     sname = "Right" if side > 0 else "Left"
     # ---- skin with fixed trailing pieces
     pb = PB(f"Wing_{S}")
-    skin_lofts(pb, 0.0, SPLIT, D_HULL + INNER, D_END, cap1=True)
+    skin_lofts(pb, 0.0, SPLIT, 0.0, D_END, cap1=True)
     mirror(pb, side)
     wing = pb.finish(parent=root, smooth_angle=30, solidify=0.0025, recalc=True,
                      props=part_props(f"{sname} Wing", "Wings", (0, side * 0.62, 0.05),
-                                      "Composite wing skin, 3.1 m span, NACA 4412-type section, leading edge blended into the fuselage, upturned winglet.",
+                                      "Composite wing skin, 3.1 m span, NACA 4412-type section with upturned winglet.",
                                       20 + (side > 0)))
     _ensure_outward(wing)
     # fixed trailing-edge strips (solid, too thin to shell)
@@ -182,11 +168,10 @@ def build_side(root, side):
     for d in rib_ds:
         if d > D_STRAIGHT:
             continue
-        b = d > 0.05       # ribs outside the hull reach forward into the blend
-        outer0 = section(d - 0.0015, 0.02, SPLIT - 0.012, n=14, tscale=0.82, blend=b)
-        outer1 = section(d + 0.0015, 0.02, SPLIT - 0.012, n=14, tscale=0.82, blend=b)
-        inner1 = section(d + 0.0015, 0.02, SPLIT - 0.012, n=14, tscale=0.82, shrink=0.62, blend=b)
-        inner0 = section(d - 0.0015, 0.02, SPLIT - 0.012, n=14, tscale=0.82, shrink=0.62, blend=b)
+        outer0 = section(d - 0.0015, 0.02, SPLIT - 0.012, n=14, tscale=0.82)
+        outer1 = section(d + 0.0015, 0.02, SPLIT - 0.012, n=14, tscale=0.82)
+        inner1 = section(d + 0.0015, 0.02, SPLIT - 0.012, n=14, tscale=0.82, shrink=0.62)
+        inner0 = section(d - 0.0015, 0.02, SPLIT - 0.012, n=14, tscale=0.82, shrink=0.62)
         st.loft([outer0, outer1, inner1, inner0], "beige", wrap=True, smooth=False)
     # spars: rectangular tubes following the section
     for xc, w in ((0.25, 0.012), (0.70, 0.008)):
