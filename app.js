@@ -215,12 +215,96 @@ aurora.frustumCulled = false;
 sky.add(aurora);
 scene.add(sky);
 
+// ------------------------------------------------------------------ wind lines
+// Streamlines baked around the real airframe by scripts/bake_airflow.js (potential flow plus the wing's horseshoe
+// vortex), mirrored across the centreline. Each is a camera-facing ribbon; gusts travel along it on the air's own
+// clock, so they speed up over the wing and slow towards the nose, and the fast air is tinted.
+const WIND_SPEED = 1.15;   // the viewer's slow-motion air speed, m/s
+const wind = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  uniforms: {
+    uTime: { value: 0 }, uAlpha: { value: 0 }, uPixel: { value: 1 / 800 },
+    uSlow: { value: new THREE.Color() }, uFast: { value: new THREE.Color() }, uBase: { value: 0.05 }, uGust: { value: 0.46 },
+  },
+  vertexShader: `
+    attribute vec3 aNext;
+    attribute vec4 aFlow;   // air time, speed, side of the ribbon, 0..1 along the line
+    attribute float aSeed;
+    uniform float uPixel;
+    varying vec3 vFlow;
+    varying float vSide, vSeed, vNear;
+    void main() {
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      vec3 along = (modelViewMatrix * vec4(aNext, 1.0)).xyz - mv.xyz;
+      vec3 across = cross(along, mv.xyz);
+      float l = length(across);
+      across = l > 1e-8 ? across / l : vec3(0.0, 1.0, 0.0);
+      float pixel = -mv.z * uPixel;   // size of a screen pixel at this depth
+      vNear = smoothstep(0.25, 0.8, -mv.z);
+      mv.xyz += across * aFlow.z * max(0.003, 1.15 * pixel);
+      gl_Position = projectionMatrix * mv;
+      vFlow = vec3(aFlow.x, aFlow.y, aFlow.w);
+      vSide = aFlow.z;
+      vSeed = aSeed;
+    }`,
+  fragmentShader: `
+    uniform float uTime, uAlpha, uBase, uGust;
+    uniform vec3 uSlow, uFast;
+    varying vec3 vFlow;
+    varying float vSide, vSeed, vNear;
+    void main() {
+      float p = fract((vFlow.x - uTime) * 0.42 + vSeed);
+      float gust = smoothstep(0.0, 0.62, p) * smoothstep(1.0, 0.93, p);   // long tail, soft head
+      float edge = 1.0 - vSide * vSide;
+      float ends = smoothstep(0.0, 0.22, vFlow.z) * smoothstep(1.0, 0.68, vFlow.z);
+      float tint = smoothstep(0.98, 1.22, vFlow.y);
+      gl_FragColor = vec4(mix(uSlow, uFast, tint), (uBase + uGust * gust * gust) * edge * ends * vNear * uAlpha);
+      #include <colorspace_fragment>
+    }`,
+}));
+wind.frustumCulled = false;
+wind.renderOrder = 4;
+wind.visible = false;
+scene.add(wind);
+function buildWind() {
+  const A = window.DRONE_AIRFLOW;
+  if (!A) return;
+  const d = new Int16Array(Uint8Array.from(atob(A.data), (c) => c.charCodeAt(0)).buffer);
+  const pos = [], next = [], flow = [], seed = [], index = [];
+  let o = 0, line = 0;
+  for (const n of A.counts) {
+    for (const mirror of [1, -1]) {
+      const s = (line++ * 0.6180339) % 1, base = pos.length / 3;
+      const at = (i, a) => d[o + i * 5 + a] / A.pos * (a === 2 ? mirror : 1);
+      for (let i = 0; i < n; i++) {
+        for (const side of [-1, 1]) {
+          for (let a = 0; a < 3; a++) {
+            pos.push(at(i, a));
+            next.push(i < n - 1 ? at(i + 1, a) : 2 * at(i, a) - at(i - 1, a));
+          }
+          flow.push(d[o + i * 5 + 3] / A.tau, d[o + i * 5 + 4] / A.speed, side, i / (n - 1));
+          seed.push(s);
+        }
+        if (i < n - 1) { const v = base + i * 2; index.push(v, v + 1, v + 2, v + 1, v + 3, v + 2); }
+      }
+    }
+    o += n * 5;
+  }
+  const g = wind.geometry;
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aNext', new THREE.Float32BufferAttribute(next, 3));
+  g.setAttribute('aFlow', new THREE.Float32BufferAttribute(flow, 4));
+  g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1));
+  g.setIndex(index);
+}
+buildWind();
+
 // ------------------------------------------------------------------ state
 const S = {
   explode: 0, explodeT: 0, ctrl: 0, ctrlT: 0,
   shell: 'cutaway', skinOp: 1, cut: 0,
   section: 'off', secPos: 0.5, secPosT: 0.5, flip: false, caps: true, sweep: null,
-  labels: innerWidth > 700, rotate: true, spin: false, spinRate: 0, wire: false, ground: true,
+  labels: innerWidth > 700, rotate: true, spin: false, spinRate: 0, wire: false, ground: true, wind: true, windOp: 0,
   hovered: null, selected: null, isolate: null, focus: null,
   hidden: new Set(),
 };
@@ -1058,6 +1142,7 @@ toggle('#tSpin', 'spin');
 $('#tCtrl').addEventListener('click', () => { S.ctrlT = S.ctrlT ? 0 : 1; $('#tCtrl').classList.toggle('on', !!S.ctrlT); });
 toggle('#tWire', 'wire');
 toggle('#tGround', 'ground', () => { ground.visible = S.ground; });
+toggle('#tWind', 'wind');
 $('#tTheme').addEventListener('click', () => {
   const dark = !isDark();
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
@@ -1077,6 +1162,9 @@ function applyTheme() {
   gu.uOpacity.value = dark ? 0.96 : 0.9;
   sky.visible = dark;         // no stars or aurora in a daylight sky
   secFrame.material.color.set(dark ? 0xff5a4e : 0xe0362b);
+  const wu = wind.material.uniforms;
+  wu.uSlow.value.set(dark ? 0x4f8dff : 0x2f6fe8);
+  wu.uFast.value.set(dark ? 0x35e0d0 : 0x00a8b5);
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 applyTheme();
@@ -1115,14 +1203,25 @@ function frame() {
 }
 // debug / testing hook: advance the simulation without requestAnimationFrame (hidden tabs)
 window.__drone = {
-  THREE, scene, camera, controls, renderer, S, tour, parts, byName, get flight() { return flight; },
+  THREE, scene, camera, controls, renderer, S, tour, parts, byName, wind, get flight() { return flight; },
   advance(sec, fps = 30) { for (let t = 0; t < sec; t += 1 / fps) tick(1 / fps); },
   startTour, stopTour, setSection, setShell, select,
 };
+// the lines belong to the assembled, closed airframe: they step aside for exploded views, cuts and interior close-ups
+function updateWind(dt, time) {
+  const clear = S.explodeT < 0.02 && S.explode < 0.3 && S.section === 'off' && !(S.focus && S.shell !== 'solid');
+  S.windOp = approach(S.windOp, S.wind && clear ? 1 : 0, 3, dt);
+  wind.visible = S.windOp > 0.004;
+  const u = wind.material.uniforms;
+  u.uAlpha.value = S.windOp * (innerWidth < 700 ? 0.7 : 1);   // the same lines sit closer together on a phone
+  u.uTime.value = time * WIND_SPEED;
+  u.uPixel.value = 2 / (camera.projectionMatrix.elements[5] * renderer.domElement.clientHeight);
+}
 function tick(dt) {
   simTime += dt;
   const time = simTime;
   aurora.material.uniforms.uTime.value = ground.material.uniforms.uTime.value = time;
+  updateWind(dt, time);
   updateTour(dt);
   updateFlight(dt);
   if (manualSweep) {
