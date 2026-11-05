@@ -16,7 +16,7 @@
   --accent: #1f5fe0; --accent-ink: #ffffff; --accent-soft: rgba(31,95,224,.12);
   --hot: #e0362b; --ok: #1f9d55;
   --shadow: 0 10px 30px rgba(15,26,42,.12), 0 2px 6px rgba(15,26,42,.06);
-  --label-ink: #0f1a2a; --label-halo: rgba(238,242,248,.85); --leader: rgba(15,26,42,.11);
+  --label-ink: #0f1a2a; --label-halo: rgba(238,242,248,.85); --leader: rgba(15,26,42,.11); --leader-halo: transparent;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -26,7 +26,7 @@
   --accent: #4d8dff; --accent-ink: #06101f; --accent-soft: rgba(77,141,255,.16);
   --hot: #ff5a4e; --ok: #3ccf7e;
   --shadow: 0 10px 30px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
-  --label-ink: #e8eef8; --label-halo: rgba(7,11,18,.85); --leader: rgba(220,232,255,.11);
+  --label-ink: #e8eef8; --label-halo: rgba(7,11,18,.85); --leader: rgba(220,232,255,.11); --leader-halo: rgba(7,11,18,.28);
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -37,7 +37,7 @@
     --accent: #4d8dff; --accent-ink: #06101f; --accent-soft: rgba(77,141,255,.16);
     --hot: #ff5a4e; --ok: #3ccf7e;
     --shadow: 0 10px 30px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
-    --label-ink: #e8eef8; --label-halo: rgba(7,11,18,.85); --leader: rgba(220,232,255,.11);
+    --label-ink: #e8eef8; --label-halo: rgba(7,11,18,.85); --leader: rgba(220,232,255,.11); --leader-halo: rgba(7,11,18,.28);
     color-scheme: dark;
   }
 }
@@ -51,7 +51,7 @@ body {
 #stage { position: fixed; inset: 0; }
 #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; outline: none; }
 #overlay { position: fixed; inset: 0; pointer-events: none; }
-#leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+#leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 1px var(--leader-halo)); }
 .lbl {
   position: absolute; left: 0; top: 0; padding: 2px 3px; white-space: nowrap;
   color: var(--label-ink); font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-weight: 700; font-size: 15px; letter-spacing: .03em; text-transform: uppercase;
@@ -64,6 +64,7 @@ body {
   border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
 }
 header.title { position: fixed; left: calc(20px + env(safe-area-inset-left, 0px)); top: calc(16px + env(safe-area-inset-top, 0px)); pointer-events: none; max-width: calc(100vw - 40px); }
+header.title { text-shadow: 0 0 3px var(--label-halo), 0 0 8px var(--label-halo); }
 header.title h1 { margin: 0; font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-size: 34px; line-height: .98; font-weight: 800; letter-spacing: .005em; text-transform: uppercase; text-wrap: balance; }
 header.title p { margin: 8px 0 0; color: var(--ink-2); font-size: 12.5px; max-width: 380px; }
 #tools { left: 16px; top: 150px; width: 272px; padding: 12px; max-height: calc(100vh - 170px); overflow: auto; pointer-events: auto; }
