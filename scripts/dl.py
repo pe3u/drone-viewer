@@ -518,6 +518,51 @@ def half_width_at(s, z, inset=0.0):
     return w * (1 - r ** n) ** (1 / n)
 
 
+def hull_side(x, z):
+    return half_width_at(s_of_x(x), z)
+
+
+def hull_top(x, y, sign):
+    s = s_of_x(x)
+    w, h = wh(s)
+    n = N_TOP if sign > 0 else N_BOT
+    r = min(abs(y) / w, 0.999)
+    return zc(s) + sign * h * (1 - r ** n) ** (1 / n)
+
+
+# ---------------------------------------------------------------------
+# Blended leading edges: every lifting surface sweeps out of the fuselage on one long concave curve
+# ---------------------------------------------------------------------
+BLEND_POWER = 1.85      # superellipse: 2 is a quarter-ellipse, lower is a little fuller
+BLEND_CREST = 0.35      # chord fraction near maximum thickness: the section is unchanged aft of it
+
+
+def blend_ext(t, E, W):
+    """How far the leading edge sits ahead of the plain surface, t from the hull: E at the hull running
+    tangent to it, 0 with zero slope at t = W."""
+    if t >= W:
+        return 0.0
+    if t <= 0:
+        return E
+    u = 1 - t / W
+    return E * (1 - (1 - u ** BLEND_POWER) ** (1 / BLEND_POWER))
+
+
+def blend_stations(t0, W):
+    """Span stations t0..W, close together at the hull where the curve turns fastest."""
+    n = segs(20, 10)
+    return [t0] + [W * (1 - math.cos(math.pi / 2 * i / n)) for i in range(1, n + 1)]
+
+
+def stretch_nose(loop, e):
+    """Pull the nose of a 2D section forward by e chords. Thickness is kept and the section aft of the
+    crest is untouched, so the surface still has one skin with the same spars and hinge line."""
+    if e <= 0:
+        return loop
+    k = (BLEND_CREST + e) / BLEND_CREST
+    return [(BLEND_CREST - (BLEND_CREST - x) * k if x < BLEND_CREST else x, z) for x, z in loop]
+
+
 # ---------------------------------------------------------------------
 # Airfoils
 # ---------------------------------------------------------------------

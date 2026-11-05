@@ -12,9 +12,9 @@ Built entirely by the Python scripts in `scripts/`. Edit them, not the `.blend`.
 |---|---|
 | `dl.py` | Library: flat-colour palette, part builder (boxes, cylinders, lathes, lofts, tubes), fuselage profile, NACA airfoils, `DETAIL` tessellation factor |
 | `fuselage.py` | Shell, removable side panels and top hatch (with fasteners), bulkheads, floor, aft tray, longerons, wing joiner tubes, belly skids |
-| `wings.py` | Wing skins with winglets, flaps, ailerons, ribs, spars, servos, pushrods, nav lights, pitot probe |
+| `wings.py` | Wing skins with leading edges blended into the fuselage, winglets, flaps, ailerons, ribs, spars, servos, pushrods, nav lights, pitot probe |
 | `tail.py` | Horizontal stabilisers, elevators, vertical fin, rudder, ventral fin |
-| `fillets.py` | Root fairings blending the wing, tailplane, fin and ventral fin into the fuselage (quarter-ellipse plan curves, pressed onto the hull) |
+| `fillets.py` | Aft root fairings on the wing and tailplane (the leading-edge blends on the wing, tailplane, fin and ventral fin are part of those surfaces, see `dl.blend_ext`) |
 | `propulsion.py` | Motor mount, outrunner motor, spinner, 2-blade pusher prop |
 | `payload.py` | LiDAR, gimballed mapping camera, GNSS antenna, datalink antenna |
 | `avionics.py` | IMU, flight controller, data processing unit, battery, PDB, ESC, tail servos, radio, GNSS receiver, auxiliary electronics |
