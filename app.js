@@ -217,14 +217,15 @@ scene.add(sky);
 
 // ------------------------------------------------------------------ wind lines
 // Streamlines baked around the real airframe by scripts/bake_airflow.js (potential flow plus the wing's horseshoe
-// vortex), mirrored across the centreline. Each is a camera-facing ribbon; gusts travel along it on the air's own
-// clock, so they speed up over the wing and slow towards the nose, and the fast air is tinted.
+// vortex), mirrored across the centreline. Each is a camera-facing ribbon that only shows as short tapered streaks,
+// which travel on the air's own clock: they speed up and stretch over the wing and slow towards the nose.
 const WIND_SPEED = 1.15;   // the viewer's slow-motion air speed, m/s
+const WIND_SHARE = 0.5;    // share of the baked lines on show
 const wind = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, side: THREE.DoubleSide,
   uniforms: {
     uTime: { value: 0 }, uAlpha: { value: 0 }, uPixel: { value: 1 / 800 },
-    uSlow: { value: new THREE.Color() }, uFast: { value: new THREE.Color() }, uBase: { value: 0.05 }, uGust: { value: 0.46 },
+    uSlow: { value: new THREE.Color() }, uFast: { value: new THREE.Color() }, uGust: { value: 0.72 },
   },
   vertexShader: `
     attribute vec3 aNext;
@@ -241,24 +242,24 @@ const wind = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.ShaderMaterial
       across = l > 1e-8 ? across / l : vec3(0.0, 1.0, 0.0);
       float pixel = -mv.z * uPixel;   // size of a screen pixel at this depth
       vNear = smoothstep(0.25, 0.8, -mv.z);
-      mv.xyz += across * aFlow.z * max(0.003, 1.15 * pixel);
+      mv.xyz += across * aFlow.z * max(0.011, 3.2 * pixel);
       gl_Position = projectionMatrix * mv;
       vFlow = vec3(aFlow.x, aFlow.y, aFlow.w);
       vSide = aFlow.z;
       vSeed = aSeed;
     }`,
   fragmentShader: `
-    uniform float uTime, uAlpha, uBase, uGust;
+    uniform float uTime, uAlpha, uGust;
     uniform vec3 uSlow, uFast;
     varying vec3 vFlow;
     varying float vSide, vSeed, vNear;
     void main() {
-      float p = fract((vFlow.x - uTime) * 0.42 + vSeed);
-      float gust = smoothstep(0.0, 0.62, p) * smoothstep(1.0, 0.93, p);   // long tail, soft head
-      float edge = 1.0 - vSide * vSide;
+      float p = fract((vFlow.x - uTime) * 0.5 + vSeed);   // a streak every 2 m of air
+      float gust = smoothstep(0.8, 0.965, p) * smoothstep(1.0, 0.965, p);   // about 0.4 m: long tail, soft head
+      float edge = smoothstep(gust, 0.0, abs(vSide));   // feathered, tapering to a point at both ends
       float ends = smoothstep(0.0, 0.22, vFlow.z) * smoothstep(1.0, 0.68, vFlow.z);
       float tint = smoothstep(0.98, 1.22, vFlow.y);
-      gl_FragColor = vec4(mix(uSlow, uFast, tint), (uBase + uGust * gust * gust) * edge * ends * vNear * uAlpha);
+      gl_FragColor = vec4(mix(uSlow, uFast, tint), uGust * gust * edge * ends * vNear * uAlpha);
       #include <colorspace_fragment>
     }`,
 }));
@@ -271,10 +272,13 @@ function buildWind() {
   if (!A) return;
   const d = new Int16Array(Uint8Array.from(atob(A.data), (c) => c.charCodeAt(0)).buffer);
   const pos = [], next = [], flow = [], seed = [], index = [];
-  let o = 0, line = 0;
+  let o = 0, line = 0, skip = false;
   for (const n of A.counts) {
     for (const mirror of [1, -1]) {
-      const s = (line++ * 0.6180339) % 1, base = pos.length / 3;
+      const s = (line * 0.6180339) % 1, base = pos.length / 3;
+      if (mirror < 0) line++;
+      if (s >= WIND_SHARE && mirror > 0) { skip = true; continue; }
+      if (skip) { skip = false; continue; }
       const at = (i, a) => d[o + i * 5 + a] / A.pos * (a === 2 ? mirror : 1);
       for (let i = 0; i < n; i++) {
         for (const side of [-1, 1]) {
@@ -1163,8 +1167,8 @@ function applyTheme() {
   sky.visible = dark;         // no stars or aurora in a daylight sky
   secFrame.material.color.set(dark ? 0xff5a4e : 0xe0362b);
   const wu = wind.material.uniforms;
-  wu.uSlow.value.set(dark ? 0x4f8dff : 0x2f6fe8);
-  wu.uFast.value.set(dark ? 0x35e0d0 : 0x00a8b5);
+  wu.uSlow.value.set(dark ? 0xdce8f6 : 0x9fb6d0);
+  wu.uFast.value.set(dark ? 0xffffff : 0xb9cbdf);
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 applyTheme();
