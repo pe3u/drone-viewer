@@ -57,13 +57,14 @@ const fill = new THREE.DirectionalLight(0xdfe8ff, 0.6);
 fill.position.set(-4, 2, 4);
 scene.add(fill);
 
-// ground 100 m below the drone: one wide disc with its grid drawn in the shader, so distant lines melt away
-// instead of shimmering. It is almost white under the drone and eases out to nothing at the rim. The fade runs on
-// the viewing angle: in metres it would pile up into a thin line at the horizon, in angle it reads evenly on screen
+// ground 100 m below the drone: one wide disc shaded like a soft cloud deck seen from above, with noise octaves that
+// flatten out with distance instead of shimmering. It is almost white under the drone and eases out to nothing at the
+// rim. The fade runs on the viewing angle: in metres it would pile up into a thin line at the horizon, in angle it
+// reads evenly on screen
 const GROUND_Y = -100, GROUND_R = 6000, GROUND_FADE = 150;
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(GROUND_R * 2, GROUND_R * 2), new THREE.ShaderMaterial({
   transparent: true, depthWrite: false,
-  uniforms: { uColor: { value: new THREE.Color() }, uLine: { value: new THREE.Color() }, uOpacity: { value: 1 }, uFade: { value: new THREE.Vector2(Math.atan(-GROUND_Y / GROUND_FADE), Math.atan(-GROUND_Y / GROUND_R)) }, uHeight: { value: -GROUND_Y } },
+  uniforms: { uColor: { value: new THREE.Color() }, uShade: { value: new THREE.Color() }, uOpacity: { value: 1 }, uFade: { value: new THREE.Vector2(Math.atan(-GROUND_Y / GROUND_FADE), Math.atan(-GROUND_Y / GROUND_R)) }, uHeight: { value: -GROUND_Y } },
   vertexShader: `
     varying vec2 vP;
     void main() {
@@ -72,19 +73,35 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(GROUND_R * 2, GROUND_R * 2
       gl_Position = projectionMatrix * viewMatrix * w;
     }`,
   fragmentShader: `
-    uniform vec3 uColor, uLine;
+    uniform vec3 uColor, uShade;
     uniform float uOpacity, uHeight;
     uniform vec2 uFade;
     varying vec2 vP;
-    float gridLine(float cell) {
-      vec2 q = vP / cell, w = fwidth(q);
-      vec2 g = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-4));
-      return (1.0 - min(min(g.x, g.y), 1.0)) * (1.0 - smoothstep(0.12, 0.45, max(w.x, w.y)));
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float noise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+    }
+    float clouds(vec2 p, float px) {
+      float v = 0.0, a = 0.5, sum = 0.0;
+      for (int i = 0; i < 6; i++) {
+        v += a * mix(noise(p), 0.5, smoothstep(0.2, 0.6, px));    // an octave finer than a pixel settles to its mean
+        sum += a;
+        p = mat2(1.6, 1.2, -1.2, 1.6) * p + 17.0;
+        px *= 2.0;
+        a *= 0.5;
+      }
+      return v / sum;
     }
     void main() {
-      float lines = max(gridLine(20.0) * 0.45, gridLine(100.0));
+      vec2 q = vP / 80.0;
+      vec2 w = fwidth(q);
+      float px = max(w.x, w.y);
+      q += 0.9 * vec2(noise(q * 0.7 + 3.0), noise(q * 0.7 + 9.0));      // warped, so the billows do not line up
+      float puff = smoothstep(0.28, 0.56, clouds(q, px));
       float angle = atan(uHeight, length(vP));
-      gl_FragColor = vec4(mix(uColor, uLine, lines), smoothstep(uFade.y, uFade.x, angle) * uOpacity);
+      gl_FragColor = vec4(mix(uShade, uColor, puff), smoothstep(uFade.y, uFade.x, angle) * mix(0.93, 1.0, puff) * uOpacity);
       #include <colorspace_fragment>
     }`,
 }));
@@ -1004,7 +1021,7 @@ function applyTheme() {
   $('#tTheme').classList.toggle('on', dark);
   const gu = ground.material.uniforms;
   gu.uColor.value.set(dark ? 0xf3f6fb : 0xffffff);
-  gu.uLine.value.set(dark ? 0xbcc9dc : 0xa9b6c6);
+  gu.uShade.value.set(dark ? 0xd5dde9 : 0xe4e9f1);
   gu.uOpacity.value = dark ? 0.96 : 0.9;
   sky.visible = dark;         // no stars or aurora in a daylight sky
   secFrame.material.color.set(dark ? 0xff5a4e : 0xe0362b);
