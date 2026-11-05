@@ -215,19 +215,6 @@ aurora.frustumCulled = false;
 sky.add(aurora);
 scene.add(sky);
 
-// ------------------------------------------------------------------ night rim
-// a soft bright falloff towards the edges of every surface, facing away from the viewer, so the dark airframe
-// keeps its outline against the night sky (off in the light theme, where the sky does that already)
-const RIM_POWER = 3.0, RIM_NIGHT = new THREE.Color(0xbcd4ff).multiplyScalar(0.12);
-const rimColor = { value: new THREE.Color(0, 0, 0) };
-function addRim(sh) {
-  sh.uniforms.uRim = rimColor;
-  sh.fragmentShader = sh.fragmentShader
-    .replace('#include <common>', '#include <common>\nuniform vec3 uRim;')
-    .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-      totalEmissiveRadiance += uRim * pow(1.0 - saturate(dot(normalize(normal), normalize(vViewPosition))), ${RIM_POWER.toFixed(1)});`);
-}
-
 // ------------------------------------------------------------------ state
 const S = {
   explode: 0, explodeT: 0, ctrl: 0, ctrlT: 0,
@@ -345,7 +332,6 @@ function collectPart(o) {
   const mats = [];
   for (const m of meshes) {
     m.material = m.material.clone();
-    m.material.onBeforeCompile = addRim;
     m.material.userData.base = { color: m.material.color.clone(), metalness: m.material.metalness, roughness: m.material.roughness };
     m.castShadow = true;
     m.receiveShadow = !!u.skin;   // interior stays lit like a cutaway illustration
@@ -1096,7 +1082,6 @@ function applyTheme() {
   gu.uOpacity.value = dark ? 0.96 : 0.9;
   sky.visible = dark;         // no stars or aurora in a daylight sky
   secFrame.material.color.set(dark ? 0xff5a4e : 0xe0362b);
-  rimColor.value.copy(dark ? RIM_NIGHT : new THREE.Color(0, 0, 0));
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 applyTheme();
@@ -1135,7 +1120,7 @@ function frame() {
 }
 // debug / testing hook: advance the simulation without requestAnimationFrame (hidden tabs)
 window.__drone = {
-  THREE, scene, camera, controls, renderer, S, tour, parts, byName, rimColor, get flight() { return flight; },
+  THREE, scene, camera, controls, renderer, S, tour, parts, byName, get flight() { return flight; },
   advance(sec, fps = 30) { for (let t = 0; t < sec; t += 1 / fps) tick(1 / fps); },
   startTour, stopTour, setSection, setShell, select,
 };
