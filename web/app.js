@@ -622,12 +622,15 @@ function buildLabels() {
 const _v = new THREE.Vector3();
 let areaCache = null;
 function freeArea() {
-  // screen rectangle labels may use: below the title, above the tour bar (the menus hide themselves)
+  // screen rectangle labels may use: below the title and, where it spans the window, the quick panel; above the
+  // tour bar (the menus hide themselves)
   if (areaCache) return areaCache;
   const W = innerWidth, H = innerHeight;
   const tour = $('#tour'), tourB = getComputedStyle(tour).display !== 'none' ? tour.getBoundingClientRect() : null;
   const head = $('header.title').getBoundingClientRect();
-  areaCache = { l: 8, r: W - 8, t: Math.max(head.bottom + 6, 8), b: (tourB && tourB.height ? tourB.top : H) - 8 };
+  const quick = $('#quick').getBoundingClientRect();
+  const top = quick.width > W / 2 ? quick.bottom : head.bottom;
+  areaCache = { l: 8, r: W - 8, t: Math.max(top + 6, 8), b: (tourB && tourB.height ? tourB.top : H) - 8 };
   return areaCache;
 }
 addEventListener('resize', () => (areaCache = null));
@@ -738,7 +741,15 @@ function setInk(el) {
 }
 function updateInk() {
   for (const el of titleText) setInk(el);
-  for (const L of labelEls) if (L.el.style.opacity === '1') setInk(L.el);
+  for (const L of labelEls) {
+    if (L.el.style.opacity !== '1') continue;
+    setInk(L.el);
+    const dark = L.el.classList.contains('ink-dark');     // the arrow changes together with its label
+    for (const el of [L.line, L.dot]) {
+      el.classList.toggle('ink-dark', dark);
+      el.classList.toggle('ink-bright', !dark);
+    }
+  }
 }
 
 function updateLabels() {

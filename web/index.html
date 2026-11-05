@@ -16,7 +16,7 @@
   --accent: #1f5fe0; --accent-ink: #ffffff; --accent-soft: rgba(31,95,224,.12);
   --hot: #e0362b; --ok: #1f9d55;
   --shadow: 0 10px 30px rgba(15,26,42,.12), 0 2px 6px rgba(15,26,42,.06);
-  --label-ink: #0f1a2a; --leader: rgba(15,26,42,.11); --leader-halo: transparent;
+  --label-ink: #0f1a2a; --leader: rgba(15,26,42,.11);
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -26,7 +26,7 @@
   --accent: #4d8dff; --accent-ink: #06101f; --accent-soft: rgba(77,141,255,.16);
   --hot: #ff5a4e; --ok: #3ccf7e;
   --shadow: 0 10px 30px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
-  --label-ink: #e8eef8; --leader: rgba(220,232,255,.11); --leader-halo: rgba(7,11,18,.28);
+  --label-ink: #e8eef8; --leader: rgba(220,232,255,.11);
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -37,7 +37,7 @@
     --accent: #4d8dff; --accent-ink: #06101f; --accent-soft: rgba(77,141,255,.16);
     --hot: #ff5a4e; --ok: #3ccf7e;
     --shadow: 0 10px 30px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
-    --label-ink: #e8eef8; --leader: rgba(220,232,255,.11); --leader-halo: rgba(7,11,18,.28);
+    --label-ink: #e8eef8; --leader: rgba(220,232,255,.11);
     color-scheme: dark;
   }
 }
@@ -51,7 +51,7 @@ body {
 #stage { position: fixed; inset: 0; }
 #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; outline: none; }
 #overlay { position: fixed; inset: 0; pointer-events: none; }
-#leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 1px var(--leader-halo)); }
+#leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .lbl {
   position: absolute; left: 0; top: 0; padding: 2px 3px; white-space: nowrap;
   color: var(--label-ink); font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-weight: 700; font-size: 15px; letter-spacing: .03em; text-transform: uppercase;
@@ -61,6 +61,9 @@ body {
 /* text follows what is behind it: app.js samples the canvas and sets these */
 .ink-bright { color: #eef2f8; } .ink-dark { color: #0f1a2a; }
 header.title p.ink-bright { color: #c6d0df; } header.title p.ink-dark { color: #2c3a50; }
+#leaders line, #leaders circle { transition: stroke .2s, fill .2s, opacity .25s; }
+#leaders line.ink-bright { stroke: rgba(220,232,255,.11); } #leaders line.ink-dark { stroke: rgba(15,26,42,.11); }
+#leaders circle.ink-bright { fill: rgba(220,232,255,.11); } #leaders circle.ink-dark { fill: rgba(15,26,42,.11); }
 .lbl.sel, .lbl:hover { color: var(--accent); }
 .panel {
   position: fixed; background: var(--panel); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
@@ -70,7 +73,8 @@ header.title { position: fixed; left: calc(20px + env(safe-area-inset-left, 0px)
 header.title h1 { margin: 0; transition: color .2s; font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-size: 34px; line-height: .98; font-weight: 800; letter-spacing: .005em; text-transform: uppercase; text-wrap: balance; }
 header.title p { margin: 8px 0 0; transition: color .2s; color: var(--ink-2); font-size: 12.5px; max-width: 380px; }
 #tools { left: 16px; top: 150px; width: 272px; padding: 12px; max-height: calc(100vh - 170px); overflow: auto; pointer-events: auto; }
-#tools h3, #partsPanel h3 { margin: 4px 2px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--ink-3); font-weight: 700; }
+#quick { right: calc(16px + env(safe-area-inset-right, 0px)); top: calc(16px + env(safe-area-inset-top, 0px)); width: 272px; padding: 10px 12px 12px; pointer-events: auto; }
+#tools h3, #partsPanel h3, #quick h3 { margin: 4px 2px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--ink-3); font-weight: 700; }
 .row { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
 .seg { display: flex; background: var(--accent-soft); border-radius: 9px; padding: 3px; gap: 2px; width: 100%; }
 .seg button { flex: 1; }
@@ -153,9 +157,12 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
   header.title { max-width: calc(100vw - 170px); left: 14px; top: 14px; }
   header.title h1 { font-size: 21px; } header.title p { display: none; }
   #partsPanel { display: none; }
-  #partsPanel.open { display: flex; left: 16px; right: 16px; width: auto; top: 76px; max-height: 46vh; z-index: 5; }
+  #quick { left: 16px; right: 16px; top: 62px; width: auto; padding: 8px 10px; }
+  #quick h3 { display: none; }
+  #quick .slider { margin-bottom: 6px; }
+  #partsPanel.open { display: flex; left: 16px; right: 16px; width: auto; top: 168px; max-height: 46vh; z-index: 5; }
   #tools { display: none; }
-  #tools.open { display: block; left: 16px; right: 16px; width: auto; top: 76px; max-height: 52vh; z-index: 5; }
+  #tools.open { display: block; left: 16px; right: 16px; width: auto; top: 168px; max-height: 52vh; z-index: 5; }
   .menuTab { display: none; }
   #mobileToggle { display: flex; position: fixed; right: 16px; top: 16px; gap: 6px; pointer-events: auto; padding: 4px; }
   #stats { display: none; }
@@ -197,8 +204,6 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
   <div class="seg" id="shellSeg" style="margin-bottom:10px">
     <button data-v="solid">Solid</button><button data-v="cutaway" class="on">Cutaway</button><button data-v="ghost">X-ray</button><button data-v="hidden">Off</button>
   </div>
-  <div class="slider"><label for="explode">Exploded view</label><output id="explodeOut">0%</output>
-    <input id="explode" type="range" min="0" max="1" step="0.001" value="0"></div>
   <hr>
   <h3>Section cut</h3>
   <div class="seg" id="secSeg" style="margin-bottom:8px">
@@ -219,11 +224,16 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
     <button id="tTheme">Dark</button>
     <button id="tHD">HD detail</button>
   </div>
+</aside>
+
+<section id="quick" class="panel" aria-label="Exploded view and camera">
+  <div class="slider"><label for="explode">Exploded view</label><output id="explodeOut">0%</output>
+    <input id="explode" type="range" min="0" max="1" step="0.001" value="0"></div>
   <h3>Camera</h3>
   <div class="seg" id="viewSeg">
     <button data-v="iso">3/4</button><button data-v="side">Side</button><button data-v="top">Top</button><button data-v="front">Front</button><button data-v="under">Below</button>
   </div>
-</aside>
+</section>
 
 <section id="info" class="panel" aria-live="polite">
   <button class="x" id="infoClose" aria-label="Close">✕</button>
