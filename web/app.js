@@ -58,9 +58,9 @@ fill.position.set(-4, 2, 4);
 scene.add(fill);
 
 // ground 100 m below the drone: one wide disc with its grid drawn in the shader, so distant lines melt away
-// instead of shimmering. Its opacity falls off linearly with the viewing angle down to the rim: linear in metres
-// would pile the whole fade into a thin line at the horizon, linear in angle reads as an even fade on screen
-const GROUND_Y = -100, GROUND_R = 6000, GROUND_FADE = 500;
+// instead of shimmering. It is almost white under the drone and eases out to nothing at the rim. The fade runs on
+// the viewing angle: in metres it would pile up into a thin line at the horizon, in angle it reads evenly on screen
+const GROUND_Y = -100, GROUND_R = 6000, GROUND_FADE = 150;
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(GROUND_R * 2, GROUND_R * 2), new THREE.ShaderMaterial({
   transparent: true, depthWrite: false,
   uniforms: { uColor: { value: new THREE.Color() }, uLine: { value: new THREE.Color() }, uOpacity: { value: 1 }, uFade: { value: new THREE.Vector2(Math.atan(-GROUND_Y / GROUND_FADE), Math.atan(-GROUND_Y / GROUND_R)) }, uHeight: { value: -GROUND_Y } },
@@ -84,7 +84,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(GROUND_R * 2, GROUND_R * 2
     void main() {
       float lines = max(gridLine(20.0) * 0.45, gridLine(100.0));
       float angle = atan(uHeight, length(vP));
-      gl_FragColor = vec4(mix(uColor, uLine, lines), clamp((angle - uFade.y) / (uFade.x - uFade.y), 0.0, 1.0) * uOpacity);
+      gl_FragColor = vec4(mix(uColor, uLine, lines), smoothstep(uFade.y, uFade.x, angle) * uOpacity);
       #include <colorspace_fragment>
     }`,
 }));
@@ -134,6 +134,7 @@ const sky = new THREE.Group();
 }
 // aurora borealis: curtains around the sky with sharp lower edges and vertical rays that fade upward, green low
 // and violet high. Noise runs on the unit circle of the azimuth, so there is no seam; it drifts very slowly.
+// Ribbons in a flat projection of the sky carry it overhead, crossing the zenith at different angles.
 const aurora = new THREE.Mesh(new THREE.SphereGeometry(SKY_R * 1.05, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.ShaderMaterial({
   side: THREE.BackSide, transparent: true, depthWrite: false, toneMapped: false,
   blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
@@ -162,11 +163,25 @@ const aurora = new THREE.Mesh(new THREE.SphereGeometry(SKY_R * 1.05, 48, 24, 0, 
       col = mix(col, vec3(0.58, 0.20, 0.92), smoothstep(0.1, 0.34, h));
       return col * body * rays * region;
     }
+    vec3 ribbon(vec2 p, float turn, float off, float s) {
+      float t = uTime;
+      p = mat2(cos(turn), -sin(turn), sin(turn), cos(turn)) * p;
+      float h = p.y - off + 0.4 * sin(p.x * 0.9 + s + t * 0.01) + 0.5 * (noise(p * 1.1 + s + t * 0.01) - 0.5);
+      float body = smoothstep(-0.03, 0.02, h) * exp(-max(h, 0.0) / (0.28 + 0.3 * noise(vec2(p.x * 0.8, s))) * 2.4);
+      float rays = 0.4 + 0.9 * pow(noise(vec2(p.x * 16.0 + t * 0.03, s)), 2.0) + 0.35 * noise(vec2(p.x * 6.0 - t * 0.02, s + 5.0));
+      float region = smoothstep(0.25, 0.6, noise(p * 0.8 + s * 1.7 + t * 0.008));
+      vec3 col = mix(vec3(0.10, 1.0, 0.48), vec3(0.08, 0.72, 0.78), smoothstep(0.03, 0.22, h));
+      col = mix(col, vec3(0.58, 0.20, 0.92), smoothstep(0.16, 0.55, h));
+      return col * body * rays * region;
+    }
     void main() {
       vec3 d = normalize(vD);
       vec2 c = d.xz / max(length(d.xz), 1e-4);
       vec3 col = curtain(c, d.y, 3.1) + 0.8 * curtain(c, d.y, 11.7) + 0.6 * curtain(c, d.y, 23.3);
-      col *= 0.12 * smoothstep(0.0, 0.03, d.y) * (1.0 - smoothstep(0.55, 0.9, d.y));
+      col *= smoothstep(0.0, 0.03, d.y) * (1.0 - smoothstep(0.55, 0.9, d.y));
+      vec2 p = d.xz / (d.y + 0.3);
+      col += (ribbon(p, 0.5, -0.5, 4.3) + 0.8 * ribbon(p, 2.1, 0.1, 13.9) + 0.7 * ribbon(p, 3.9, 0.6, 29.1)) * smoothstep(0.12, 0.4, d.y);
+      col *= 0.12;
       gl_FragColor = vec4(col, max(col.r, max(col.g, col.b)));
     }`,
 }));
@@ -988,9 +1003,9 @@ function applyTheme() {
   const dark = isDark();
   $('#tTheme').classList.toggle('on', dark);
   const gu = ground.material.uniforms;
-  gu.uColor.value.set(dark ? 0xa6bbdc : 0xffffff);
-  gu.uLine.value.set(dark ? 0x6f8ab4 : 0xa9b6c6);
-  gu.uOpacity.value = dark ? 0.62 : 0.9;
+  gu.uColor.value.set(dark ? 0xf3f6fb : 0xffffff);
+  gu.uLine.value.set(dark ? 0xbcc9dc : 0xa9b6c6);
+  gu.uOpacity.value = dark ? 0.96 : 0.9;
   sky.visible = dark;         // no stars or aurora in a daylight sky
   secFrame.material.color.set(dark ? 0xff5a4e : 0xe0362b);
 }
