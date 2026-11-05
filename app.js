@@ -709,6 +709,38 @@ function labelRing(W, H, box) {
   return { cx, cy, R: Math.min(fit + RING_GAP, rMax) };
 }
 
+// text colour: each label and the title sample the rendered frame behind them and take bright or dark ink. The two
+// thresholds keep text on a mid-tone from flickering. Must run right after render, while the drawing buffer is valid.
+const INK_DARK_ABOVE = 0.54, INK_BRIGHT_BELOW = 0.46, INK_EVERY = 0.2;
+const titleText = [$('header.title h1'), $('header.title p')];
+let inkPixels = new Uint8Array(0), inkClock = INK_EVERY;
+function backdropLuma(el) {
+  const gl = renderer.getContext(), pr = renderer.getPixelRatio(), r = el.getBoundingClientRect();
+  const bw = gl.drawingBufferWidth, bh = gl.drawingBufferHeight;
+  const x = Math.max(0, Math.floor(r.left * pr)), y = Math.max(0, Math.floor(bh - r.bottom * pr));
+  const w = Math.min(bw - x, Math.ceil(r.width * pr)), h = Math.min(bh - y, Math.ceil(r.height * pr));
+  if (w <= 0 || h <= 0) return null;
+  if (inkPixels.length < w * h * 4) inkPixels = new Uint8Array(w * h * 4);
+  gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, inkPixels);
+  const page = isDark() ? 0.06 : 0.92;      // the canvas is transparent where nothing is drawn, showing the page
+  let sum = 0;
+  for (let i = 0; i < w * h * 4; i += 4) {
+    sum += (0.2126 * inkPixels[i] + 0.7152 * inkPixels[i + 1] + 0.0722 * inkPixels[i + 2]) / 255 + (1 - inkPixels[i + 3] / 255) * page;
+  }
+  return sum / (w * h);
+}
+function setInk(el) {
+  const luma = backdropLuma(el);
+  if (luma === null) return;
+  const dark = luma > INK_DARK_ABOVE || (luma >= INK_BRIGHT_BELOW && el.classList.contains('ink-dark'));
+  el.classList.toggle('ink-dark', dark);
+  el.classList.toggle('ink-bright', !dark);
+}
+function updateInk() {
+  for (const el of titleText) setInk(el);
+  for (const L of labelEls) if (L.el.style.opacity === '1') setInk(L.el);
+}
+
 function updateLabels() {
   const W = innerWidth, H = innerHeight;
   const cs = getComputedStyle(document.documentElement);
@@ -1098,7 +1130,11 @@ function tick(dt) {
   controls.update();
   updateHover();
   renderer.render(scene, camera);
-  if (parts.length) updateLabels();
+  if (parts.length) {
+    updateLabels();
+    inkClock += dt;
+    if (inkClock >= INK_EVERY) { inkClock = 0; updateInk(); }
+  }
   fpsAcc += dt; fpsN++;
   statT += dt;
   if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
