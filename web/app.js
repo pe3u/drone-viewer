@@ -166,7 +166,7 @@ const aurora = new THREE.Mesh(new THREE.SphereGeometry(SKY_R * 1.05, 48, 24, 0, 
       vec3 d = normalize(vD);
       vec2 c = d.xz / max(length(d.xz), 1e-4);
       vec3 col = curtain(c, d.y, 3.1) + 0.8 * curtain(c, d.y, 11.7) + 0.6 * curtain(c, d.y, 23.3);
-      col *= 0.3 * smoothstep(0.0, 0.03, d.y) * (1.0 - smoothstep(0.55, 0.9, d.y));
+      col *= 0.12 * smoothstep(0.0, 0.03, d.y) * (1.0 - smoothstep(0.55, 0.9, d.y));
       gl_FragColor = vec4(col, max(col.r, max(col.g, col.b)));
     }`,
 }));
