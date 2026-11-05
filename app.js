@@ -218,7 +218,7 @@ scene.add(sky);
 // ------------------------------------------------------------------ night rim
 // a soft bright falloff towards the edges of every surface, facing away from the viewer, so the dark airframe
 // keeps its outline against the night sky (off in the light theme, where the sky does that already)
-const RIM_POWER = 3.0, RIM_NIGHT = new THREE.Color(0xbcd4ff).multiplyScalar(0.3);
+const RIM_POWER = 3.0, RIM_NIGHT = new THREE.Color(0xbcd4ff).multiplyScalar(0.12);
 const rimColor = { value: new THREE.Color(0, 0, 0) };
 function addRim(sh) {
   sh.uniforms.uRim = rimColor;
