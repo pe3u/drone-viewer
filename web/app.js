@@ -57,7 +57,7 @@ const fill = new THREE.DirectionalLight(0xdfe8ff, 0.6);
 fill.position.set(-4, 2, 4);
 scene.add(fill);
 
-// ground 100 m below the drone: one wide disc shaded like a soft, drifting cloud deck seen from above, under a fixed
+// ground 100 m below the drone: one wide disc shaded like a thin, streaky cirrostratus deck seen from above, under a fixed
 // 20 m / 100 m grid. Noise octaves and grid lines both flatten out with distance instead of shimmering. It is almost white under the drone and eases out to nothing at the
 // rim. The fade runs on the viewing angle: in metres it would pile up into a thin line at the horizon, in angle it
 // reads evenly on screen
@@ -100,13 +100,19 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(GROUND_R * 2, GROUND_R * 2
       return v / sum;
     }
     void main() {
-      vec2 q = vP / 80.0;
+      // the deck is combed out along the upper wind: a stretched, gently warped sheet carries finer fibres that run the
+      // same way, with long thin gaps between the bands
+      const mat2 WIND = mat2(0.94, 0.34, -0.34, 0.94);
+      vec2 r = WIND * vP + vec2(1.0, 0.0) * uTime;                         // drifting at about 1 m/s
+      vec2 q = r / vec2(320.0, 70.0);
+      q.y += 0.55 * noise(q * vec2(0.6, 0.25) + 5.0 - uTime * 0.002);      // slow bends and hooks across the streaks
       vec2 w = fwidth(q);
-      float px = max(w.x, w.y);
-      q += vec2(0.012, 0.005) * uTime;                                   // drifting at about 1 m/s
-      // warped, so the billows do not line up; the warp moves a little slower, so they change shape as they drift
-      q += 0.9 * vec2(noise(q * 0.7 + 3.0 - uTime * 0.004), noise(q * 0.7 + 9.0 + uTime * 0.003));
-      float puff = smoothstep(0.28, 0.56, clouds(q, px));
+      float sheet = clouds(q, max(w.x, w.y));
+      vec2 fq = vec2(r.x / 150.0, q.y * 9.0 + 0.35 * sheet);
+      vec2 fw = fwidth(fq);
+      float fibre = clouds(fq, max(fw.x, fw.y));
+      float veil = smoothstep(0.3, 0.62, sheet);
+      float puff = clamp(veil * (0.55 + 0.75 * smoothstep(0.4, 0.72, fibre)), 0.0, 1.0);
       float angle = atan(uHeight, length(vP));
       float lines = max(gridLine(20.0) * 0.45, gridLine(100.0));
       gl_FragColor = vec4(mix(mix(uShade, uColor, puff), uLine, lines), smoothstep(uFade.y, uFade.x, angle) * mix(0.93, 1.0, puff) * uOpacity);
@@ -117,6 +123,79 @@ ground.rotation.x = -Math.PI / 2;
 ground.position.y = GROUND_Y;
 ground.renderOrder = -2;
 scene.add(ground);
+
+// cloud banks at flight level that stream past (and through) the drone, nose to tail: soft camera-facing wisps in
+// clumps, on a loop that fades them in far ahead and out far behind. Drawn after the airframe so it sits inside them.
+const CLOUD_SPAN = 34, CLOUD_SPEED = 1.6;   // loop half-length (m) and slow-motion air speed (m/s)
+const cloudBanks = (() => {
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // bank centres: some straight through the airframe, others off to the sides, above and below
+  const banks = [[0, 0.05, 0.2], [0, -0.9, -4.5], [0, 1.1, 3.6], [0, 0.0, -1.1], [0, -1.6, 6.5], [0, 0.6, 1.4], [0, 2.2, -7.5], [0, -0.4, 0.9]];
+  const off = [], shape = [];
+  banks.forEach((b, i) => {
+    const x0 = -CLOUD_SPAN + (i + 0.5) * (2 * CLOUD_SPAN / banks.length);
+    for (let k = 0; k < 40; k++) {
+      const u = rnd() * 2 - 1, v = rnd() * 2 - 1, t = rnd() * 2 - 1, d = Math.cbrt(rnd());
+      const n = Math.hypot(u, v, t) || 1;
+      off.push(x0 + (u / n) * d * 4.0, b[1] + (v / n) * d * 0.7, b[2] + (t / n) * d * 2.6);
+      shape.push(0.8 + rnd() * 1.8, rnd() * Math.PI * 2, rnd(), 0.55 + rnd() * 0.45);
+    }
+  });
+  const g = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(1, 1));
+  g.setAttribute('aOffset', new THREE.InstancedBufferAttribute(new Float32Array(off), 3));
+  g.setAttribute('aShape', new THREE.InstancedBufferAttribute(new Float32Array(shape), 4));
+  g.instanceCount = off.length / 3;
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { uTime: { value: 0 }, uAlpha: { value: 0 }, uTop: { value: new THREE.Color() }, uBottom: { value: new THREE.Color() }, uDensity: { value: 0.2 } },
+    vertexShader: `
+      attribute vec3 aOffset;
+      attribute vec4 aShape;   // size, spin, seed, strength
+      uniform float uTime;
+      varying vec2 vUv;
+      varying float vSeed, vFade;
+      void main() {
+        vec3 c = aOffset;
+        c.x = mod(c.x + uTime * ${CLOUD_SPEED.toFixed(2)} + ${CLOUD_SPAN.toFixed(1)}, ${(2 * CLOUD_SPAN).toFixed(1)}) - ${CLOUD_SPAN.toFixed(1)};
+        vec4 mv = modelViewMatrix * vec4(c, 1.0);
+        float cs = cos(aShape.y), sn = sin(aShape.y);
+        mv.xy += mat2(cs, sn, -sn, cs) * position.xy * aShape.x;
+        gl_Position = projectionMatrix * mv;
+        vUv = position.xy;
+        vSeed = aShape.z;
+        // in at the far end of the loop, out at the near end; thinned right at the camera so it never whites out
+        vFade = aShape.w * smoothstep(${CLOUD_SPAN.toFixed(1)}, ${(CLOUD_SPAN * 0.6).toFixed(1)}, abs(c.x))
+          * smoothstep(0.35, 1.8, -mv.z);
+      }`,
+    fragmentShader: `
+      uniform float uTime, uAlpha, uDensity;
+      uniform vec3 uTop, uBottom;
+      varying vec2 vUv;
+      varying float vSeed, vFade;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float noise(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+      }
+      void main() {
+        float r = length(vUv) * 2.0;
+        if (r > 1.0) discard;
+        vec2 p = vUv * 3.2 + vSeed * 31.0 + vec2(uTime * 0.05, 0.0);
+        float n = 0.55 * noise(p) + 0.3 * noise(p * 2.3 + 7.0) + 0.15 * noise(p * 5.1 + 3.0);
+        float a = smoothstep(0.08, 0.8, (1.0 - r) * (0.2 + 1.3 * n) - 0.1) * vFade * uDensity * uAlpha;
+        if (a < 0.002) discard;
+        gl_FragColor = vec4(mix(uBottom, uTop, clamp(vUv.y + 0.5 + 0.3 * (n - 0.5), 0.0, 1.0)), a);
+        #include <colorspace_fragment>
+      }`,
+  }));
+  m.frustumCulled = false;
+  m.renderOrder = 1100;
+  m.visible = false;
+  return m;
+})();
+scene.add(cloudBanks);
 
 function radialTexture(size, stops) {
   const c = document.createElement('canvas');
@@ -220,7 +299,7 @@ const S = {
   explode: 0, explodeT: 0, ctrl: 0, ctrlT: 0,
   shell: 'cutaway', skinOp: 1, cut: 0,
   section: 'off', secPos: 0.5, secPosT: 0.5, flip: false, caps: true, sweep: null,
-  labels: innerWidth > 700, rotate: true, spin: false, spinRate: 0, wire: false, ground: true,
+  labels: innerWidth > 700, rotate: true, spin: false, spinRate: 0, wire: false, ground: true, clouds: true, cloudsOp: 0,
   hovered: null, selected: null, isolate: null, focus: null,
   hidden: new Set(),
 };
@@ -1070,6 +1149,7 @@ toggle('#tSpin', 'spin');
 $('#tCtrl').addEventListener('click', () => { S.ctrlT = S.ctrlT ? 0 : 1; $('#tCtrl').classList.toggle('on', !!S.ctrlT); });
 toggle('#tWire', 'wire');
 toggle('#tGround', 'ground', () => { ground.visible = S.ground; });
+toggle('#tClouds', 'clouds');
 $('#tTheme').addEventListener('click', () => {
   const dark = !isDark();
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
@@ -1089,6 +1169,10 @@ function applyTheme() {
   gu.uOpacity.value = dark ? 0.96 : 0.9;
   sky.visible = dark;         // no stars or aurora in a daylight sky
   secFrame.material.color.set(dark ? 0xff5a4e : 0xe0362b);
+  const cu = cloudBanks.material.uniforms;
+  cu.uTop.value.set(dark ? 0xc9d3e2 : 0xffffff);
+  cu.uBottom.value.set(dark ? 0x5d6878 : 0xc3ccd8);
+  cu.uDensity.value = dark ? 0.2 : 0.28;
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 applyTheme();
@@ -1127,14 +1211,23 @@ function frame() {
 }
 // debug / testing hook: advance the simulation without requestAnimationFrame (hidden tabs)
 window.__drone = {
-  THREE, scene, camera, controls, renderer, S, tour, parts, byName, get flight() { return flight; },
+  THREE, scene, camera, controls, renderer, S, tour, parts, byName, cloudBanks, get flight() { return flight; },
   advance(sec, fps = 30) { for (let t = 0; t < sec; t += 1 / fps) tick(1 / fps); },
   startTour, stopTour, setSection, setShell, select,
 };
+// the banks step aside for exploded views, section cuts and interior close-ups, where they would hide the parts
+function updateClouds(dt, time) {
+  const clear = S.explodeT < 0.02 && S.explode < 0.3 && S.section === 'off' && !(S.focus && S.shell !== 'solid');
+  S.cloudsOp = approach(S.cloudsOp, S.clouds && clear ? 1 : 0, 2.5, dt);
+  cloudBanks.visible = S.cloudsOp > 0.004;
+  cloudBanks.material.uniforms.uAlpha.value = S.cloudsOp;
+  cloudBanks.material.uniforms.uTime.value = time;
+}
 function tick(dt) {
   simTime += dt;
   const time = simTime;
   aurora.material.uniforms.uTime.value = ground.material.uniforms.uTime.value = time;
+  updateClouds(dt, time);
   updateTour(dt);
   updateFlight(dt);
   if (manualSweep) {
