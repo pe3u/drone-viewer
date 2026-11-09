@@ -57,14 +57,15 @@ const fill = new THREE.DirectionalLight(0xdfe8ff, 0.6);
 fill.position.set(-4, 2, 4);
 scene.add(fill);
 
-// ground 100 m below the drone: one wide disc shaded like a thin, streaky cirrostratus deck seen from above, under a fixed
+// ground 100 m below the drone: one wide disc shaded like arctic upland seen from above (snowfields, dark rock ridges,
+// frozen lakes in winding valleys) under scattered low cumulus that drifts and casts shadows, beneath a fixed
 // 20 m / 100 m grid. Noise octaves and grid lines both flatten out with distance instead of shimmering. It is almost white under the drone and eases out to nothing at the
 // rim. The fade runs on the viewing angle: in metres it would pile up into a thin line at the horizon, in angle it
 // reads evenly on screen
 const GROUND_Y = -100, GROUND_R = 6000, GROUND_FADE = 150;
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(GROUND_R * 2, GROUND_R * 2), new THREE.ShaderMaterial({
   transparent: true, depthWrite: false,
-  uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color() }, uShade: { value: new THREE.Color() }, uLine: { value: new THREE.Color() }, uOpacity: { value: 1 }, uFade: { value: new THREE.Vector2(Math.atan(-GROUND_Y / GROUND_FADE), Math.atan(-GROUND_Y / GROUND_R)) }, uHeight: { value: -GROUND_Y } },
+  uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color() }, uLine: { value: new THREE.Color() }, uOpacity: { value: 1 }, uFade: { value: new THREE.Vector2(Math.atan(-GROUND_Y / GROUND_FADE), Math.atan(-GROUND_Y / GROUND_R)) }, uHeight: { value: -GROUND_Y } },
   vertexShader: `
     varying vec2 vP;
     void main() {
@@ -73,7 +74,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(GROUND_R * 2, GROUND_R * 2
       gl_Position = projectionMatrix * viewMatrix * w;
     }`,
   fragmentShader: `
-    uniform vec3 uColor, uShade, uLine;
+    uniform vec3 uColor, uLine;
     uniform float uTime, uOpacity, uHeight;
     uniform vec2 uFade;
     varying vec2 vP;
@@ -99,23 +100,65 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(GROUND_R * 2, GROUND_R * 2
       }
       return v / sum;
     }
+    // terrain height (0..1): broad warped uplands and winding valleys, with ridged crests and gullies added mostly on
+    // the high ground so the valley floors stay smooth
+    float height(vec2 p, float px) {
+      vec2 b = p * 0.22;
+      b += 0.9 * vec2(noise(b * 0.6 + 3.0), noise(b * 0.6 + 8.0));
+      float base = 0.55 * noise(b) + 0.3 * noise(b * 2.1 + 5.0) + 0.15 * noise(b * 4.3 + 9.0);
+      p += 0.6 * vec2(noise(p * 0.5 + 3.0), noise(p * 0.5 + 8.0));
+      float v = 0.0, a = 0.5, sum = 0.0;
+      for (int i = 0; i < 6; i++) {
+        float n = noise(p);
+        n = i < 2 ? n : 1.0 - abs(2.0 * n - 1.0);                      // ridged fine octaves: crests and gullies
+        v += a * mix(n, 0.5, smoothstep(0.2, 0.6, px));
+        sum += a;
+        p = mat2(1.6, 1.2, -1.2, 1.6) * p + 17.0;
+        px *= 2.0;
+        a *= 0.5;
+      }
+      return 0.75 * base + 0.25 * (v / sum) * mix(0.3, 1.0, smoothstep(0.38, 0.62, base));
+    }
+    float cumulus(vec2 p, float px) {
+      vec2 c = p / 30.0;
+      float cover = smoothstep(0.4, 0.8, noise(p / 220.0 + 4.0));    // clouds come in fields, with clear gaps
+      return smoothstep(0.6 - 0.07 * cover, 0.7 - 0.06 * cover, clouds(c, px / 30.0)) * cover;
+    }
     void main() {
-      // the deck is combed out along the upper wind: a stretched, gently warped sheet carries finer fibres that run the
-      // same way, with long thin gaps between the bands
-      const mat2 WIND = mat2(0.94, 0.34, -0.34, 0.94);
-      vec2 r = WIND * vP + vec2(1.0, 0.0) * uTime;                         // drifting at about 1 m/s
-      vec2 q = r / vec2(320.0, 70.0);
-      q.y += 0.55 * noise(q * vec2(0.6, 0.25) + 5.0 - uTime * 0.002);      // slow bends and hooks across the streaks
-      vec2 w = fwidth(q);
-      float sheet = clouds(q, max(w.x, w.y));
-      vec2 fq = vec2(r.x / 150.0, q.y * 9.0 + 0.35 * sheet);
-      vec2 fw = fwidth(fq);
-      float fibre = clouds(fq, max(fw.x, fw.y));
-      float veil = smoothstep(0.3, 0.62, sheet);
-      float puff = clamp(veil * (0.55 + 0.75 * smoothstep(0.4, 0.72, fibre)), 0.0, 1.0);
+      const vec2 SUN = vec2(0.8, 0.6);                                    // light from the side, low, like the photo
+      vec2 tp = vP / 110.0 + vec2(3.7, -2.2);
+      vec2 w = fwidth(tp);
+      float px = max(w.x, w.y), e = max(px, 0.01);
+      float h = height(tp, px);
+      vec2 grad = 4.0 * vec2(height(tp + vec2(e, 0.0), px) - h, height(tp + vec2(0.0, e), px) - h) / e;
+      float slope = length(grad);
+      float lit = clamp(0.72 + 0.45 * dot(grad, SUN), 0.22, 1.1);
+
+      // snow lies on the gentle ground, rock shows on the steep ridges, in streaks
+      float streak = noise(vP / vec2(1.5, 7.0) + 2.0);
+      float rock = smoothstep(0.55, 1.1, slope + 0.4 * (streak - 0.5)) * (1.0 - smoothstep(0.2, 0.6, px * 25.0) * 0.4);
+      vec3 snow = vec3(0.92, 0.94, 0.97) * lit;
+      vec3 stone = mix(vec3(0.05, 0.06, 0.08), vec3(0.2, 0.23, 0.27), streak) * mix(0.7, 1.0, lit);
+      vec3 col = mix(snow, stone, rock);
+      // frozen lakes in the low ground: flat, smooth, bright, with a soft grey shore
+      float lake = smoothstep(0.29, 0.283, h);
+      float shore = smoothstep(0.305, 0.29, h) - lake;
+      col = mix(col, vec3(0.1, 0.12, 0.15), shore * 0.7);
+      col = mix(col, vec3(0.95, 0.97, 1.0) - 0.05 * noise(vP / vec2(10.0, 2.5)), lake);
+
+      // low cumulus drifting over it, lit on the sun side, grey beneath, casting shadows offset away from the sun
+      vec2 cp = vP + vec2(1.6, 0.6) * uTime;
+      float cpx = max(fwidth(cp).x, fwidth(cp).y);
+      float cl = cumulus(cp, cpx);
+      float shadow = cumulus(cp - SUN * 10.0, cpx);
+      col *= 1.0 - 0.45 * shadow * (1.0 - cl);
+      float toward = cumulus(cp + SUN * 2.5, cpx);
+      vec3 cloud = mix(vec3(0.3, 0.34, 0.4), vec3(1.0), clamp(0.45 + 2.5 * (cl - toward) + 0.4 * cl, 0.0, 1.0));
+      col = mix(col, cloud, smoothstep(0.0, 0.55, cl));
+
       float angle = atan(uHeight, length(vP));
-      float lines = max(gridLine(20.0) * 0.45, gridLine(100.0));
-      gl_FragColor = vec4(mix(mix(uShade, uColor, puff), uLine, lines), smoothstep(uFade.y, uFade.x, angle) * mix(0.93, 1.0, puff) * uOpacity);
+      float lines = max(gridLine(20.0) * 0.45, gridLine(100.0)) * 0.6;
+      gl_FragColor = vec4(mix(col * uColor, uLine, lines), smoothstep(uFade.y, uFade.x, angle) * uOpacity);
       #include <colorspace_fragment>
     }`,
 }));
@@ -126,7 +169,7 @@ scene.add(ground);
 
 // cloud banks at flight level that stream past (and through) the drone, nose to tail: soft camera-facing wisps in
 // clumps, on a loop that fades them in far ahead and out far behind. Drawn after the airframe so it sits inside them.
-const CLOUD_SPAN = 34, CLOUD_SPEED = 1.6;   // loop half-length (m) and slow-motion air speed (m/s)
+const CLOUD_SPAN = 34, CLOUD_SPEED = 4.5;   // loop half-length (m) and slow-motion air speed (m/s)
 const cloudBanks = (() => {
   let seed = 7;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -1163,8 +1206,7 @@ function applyTheme() {
   const dark = isDark();
   $('#tTheme').classList.toggle('on', dark);
   const gu = ground.material.uniforms;
-  gu.uColor.value.set(dark ? 0xf3f6fb : 0xffffff);
-  gu.uShade.value.set(dark ? 0xd5dde9 : 0xe4e9f1);
+  gu.uColor.value.set(dark ? 0xaab8cf : 0xffffff);              // moonlit in the dark theme
   gu.uLine.value.set(dark ? 0xa9b8ce : 0xa9b6c6);
   gu.uOpacity.value = dark ? 0.96 : 0.9;
   sky.visible = dark;         // no stars or aurora in a daylight sky
